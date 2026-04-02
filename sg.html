@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>三国对抗赛</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config={theme:{extend:{colors:{gold:{300:'#F0E2B6',400:'#E8D5A3',500:'#C8A45C',600:'#A88B3C',700:'#8B7D5C'},ink:{950:'#06060a',900:'#0a0a0f',800:'#12111a',700:'#1c1a26',600:'#2a2838',500:'#3a3848'},vermillion:'#B8342F',jade:'#3A8C6E'},fontFamily:{brush:['"Ma Shan Zheng"','cursive'],body:['"Noto Sans SC"','sans-serif']}}}}
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Noto Sans SC',sans-serif;background:#06060a;color:#E8D5A3;overflow-x:hidden;min-height:100vh}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:#12111a}::-webkit-scrollbar-thumb{background:#A88B3C;border-radius:2px}
+.bg-pattern{position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(ellipse 80% 60% at 50% 0%,rgba(200,164,92,0.06),transparent),radial-gradient(ellipse 60% 50% at 20% 80%,rgba(184,52,47,0.04),transparent),radial-gradient(ellipse 60% 50% at 80% 80%,rgba(58,140,110,0.04),transparent)}
+.float-particle{position:fixed;width:2px;height:2px;background:rgba(200,164,92,0.3);border-radius:50%;animation:floatUp linear infinite;pointer-events:none;z-index:0}
+@keyframes floatUp{0%{transform:translateY(100vh) scale(0);opacity:0}10%{opacity:1}90%{opacity:1}100%{transform:translateY(-10vh) scale(1.5);opacity:0}}
+.page{display:none;position:relative;z-index:1;min-height:100vh}.page.active{display:flex;flex-direction:column}
+.home-title{font-family:'Ma Shan Zheng',cursive;font-size:clamp(3rem,8vw,5.5rem);background:linear-gradient(135deg,#E8D5A3 0%,#C8A45C 40%,#A88B3C 60%,#E8D5A3 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;filter:drop-shadow(0 0 30px rgba(200,164,92,0.3));letter-spacing:0.1em;line-height:1.2}
+.home-subtitle{color:#8B7D5C;font-size:1rem;letter-spacing:0.3em;margin-top:0.5rem}
+.home-divider{width:200px;height:1px;background:linear-gradient(90deg,transparent,#C8A45C,transparent);margin:1.5rem auto}
+.btn-primary{background:linear-gradient(135deg,#A88B3C,#C8A45C);color:#06060a;font-weight:700;padding:0.875rem 3rem;border-radius:4px;border:none;cursor:pointer;font-size:1.05rem;letter-spacing:0.15em;transition:all .3s;position:relative;overflow:hidden}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(200,164,92,0.3)}
+.btn-primary::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent);transform:translateX(-100%);transition:transform .6s}
+.btn-primary:hover::after{transform:translateX(100%)}
+.btn-outline{background:transparent;color:#C8A45C;border:1px solid rgba(200,164,92,0.4);padding:0.75rem 2rem;border-radius:4px;cursor:pointer;font-size:0.9rem;letter-spacing:0.1em;transition:all .3s}
+.btn-outline:hover{border-color:#C8A45C;background:rgba(200,164,92,0.08)}
+.game-header{background:rgba(12,12,18,0.92);border-bottom:1px solid rgba(200,164,92,0.12);padding:0.6rem 1.2rem;backdrop-filter:blur(10px)}
+.turn-badge{display:inline-flex;align-items:center;gap:0.4rem;background:rgba(200,164,92,0.08);border:1px solid rgba(200,164,92,0.2);border-radius:4px;padding:0.3rem 0.8rem;font-size:0.8rem}
+.turn-badge.player-a{border-color:rgba(74,144,217,0.45);color:#6BA4E0}.turn-badge.player-b{border-color:rgba(217,74,74,0.45);color:#E06B6B}
+.game-board{display:grid;grid-template-columns:260px 1fr 260px;gap:0.75rem;padding:0.75rem;flex:1;overflow:hidden;min-height:0}
+@media(max-width:1100px){.game-board{grid-template-columns:200px 1fr 200px;gap:0.5rem;padding:0.5rem}}
+@media(max-width:800px){.game-board{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;height:auto;overflow-y:auto}}
+.lineup-panel{background:rgba(18,17,26,0.5);border:1px solid rgba(200,164,92,0.08);border-radius:8px;padding:0.6rem;display:flex;flex-direction:column;gap:0.4rem;overflow-y:auto}
+.panel-title{font-family:'Ma Shan Zheng',cursive;font-size:1.3rem;text-align:center;padding-bottom:0.4rem;border-bottom:1px solid rgba(200,164,92,0.12)}
+.panel-title.a-title{color:#6BA4E0}.panel-title.b-title{color:#E06B6B}
+.lineup-grid{display:grid;grid-template-columns:1fr 1fr;gap:0.35rem;flex:1}
+.lineup-slot{border:1px dashed rgba(200,164,92,0.18);border-radius:6px;padding:0.35rem;min-height:62px;cursor:default;transition:all .3s;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;font-size:0.65rem;gap:1px}
+.lineup-slot .slot-label{color:#8B7D5C;font-size:0.6rem;display:flex;align-items:center;gap:3px}
+.lineup-slot .slot-empty{color:rgba(200,164,92,0.18);font-size:0.55rem}
+.lineup-slot.filled{border-style:solid;background:rgba(200,164,92,0.03)}.lineup-slot.filled .slot-label{color:#C8A45C}
+.lineup-slot.highlight{border-color:#C8A45C!important;box-shadow:0 0 12px rgba(200,164,92,0.4);animation:slotPulse 1.2s infinite;cursor:pointer}
+.lineup-slot.highlight-invalid{border-color:#B8342F!important;box-shadow:0 0 12px rgba(184,52,47,0.3);animation:slotPulse 1.2s infinite;cursor:not-allowed}
+@keyframes slotPulse{0%,100%{box-shadow:0 0 8px rgba(200,164,92,0.3)}50%{box-shadow:0 0 18px rgba(200,164,92,0.6)}}
+.slot-hero-name{font-weight:700;font-size:0.78rem;line-height:1.2}
+.slot-hero-title{color:#8B7D5C;font-size:0.5rem}
+.slot-hero-stats{display:flex;gap:4px;font-size:0.48rem;color:#A88B3C;margin-top:1px}
+.color-dot{width:5px;height:5px;border-radius:50%;display:inline-block}.color-blue{background:#4A90D9}.color-red{background:#D94A4A}.color-green{background:#4AD97A}.color-yellow{background:#D9C84A}
+.center-panel{display:flex;flex-direction:column;gap:0.6rem;overflow:hidden;min-height:0}
+.pick-area{background:rgba(18,17,26,0.5);border:1px solid rgba(200,164,92,0.08);border-radius:8px;padding:0.6rem;flex:1;display:flex;flex-direction:column;min-height:200px;overflow:hidden}
+.pick-area-title{font-size:0.75rem;color:#8B7D5C;text-align:center;margin-bottom:0.4rem;flex-shrink:0}
+.hero-cards-row{display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap;flex:1;align-items:center;overflow-y:auto;padding:0.25rem}
+.hero-card{width:105px;background:rgba(26,24,36,0.9);border:2px solid rgba(200,164,92,0.12);border-radius:8px;padding:0.5rem;cursor:pointer;transition:all .3s;flex-shrink:0;text-align:center}
+.hero-card:hover{transform:translateY(-2px);border-color:rgba(200,164,92,0.35)}
+.hero-card.selectable{cursor:pointer}.hero-card.selectable:hover{border-color:#C8A45C;box-shadow:0 4px 20px rgba(200,164,92,0.25)}
+.hero-card.selected{border-color:#C8A45C;box-shadow:0 0 15px rgba(200,164,92,0.5);background:rgba(200,164,92,0.07)}
+.hero-card.rolling{animation:cardRoll 0.08s ease}.hero-card.stopped{animation:cardSlam 0.35s cubic-bezier(0.34,1.56,0.64,1)}
+@keyframes cardRoll{0%{opacity:.5;transform:scale(.95)}100%{opacity:1;transform:scale(1)}}
+@keyframes cardSlam{0%{transform:scale(1.12) translateY(-5px)}60%{transform:scale(.97)}100%{transform:scale(1) translateY(0)}}
+.hero-card .hc-name{font-family:'Ma Shan Zheng',cursive;font-size:1.05rem;line-height:1.2}
+.hero-card .hc-title{font-size:0.5rem;color:#8B7D5C;margin:2px 0}
+.hero-card .hc-stats{display:flex;justify-content:center;gap:5px;font-size:0.5rem;margin-top:3px}
+.hero-card .hc-stat{display:flex;align-items:center;gap:1px}
+.hero-card .hc-special{font-size:0.45rem;color:#C8A45C;margin-top:2px;padding:1px 5px;background:rgba(200,164,92,0.1);border-radius:3px;display:inline-block}
+.skill-bar{display:flex;gap:0.35rem;flex-wrap:wrap;justify-content:center;flex-shrink:0}
+.skill-btn{background:rgba(26,24,36,0.8);border:1px solid rgba(200,164,92,0.18);color:#C8A45C;padding:0.35rem 0.6rem;border-radius:4px;cursor:pointer;font-size:0.68rem;transition:all .3s;display:flex;align-items:center;gap:3px;white-space:nowrap}
+.skill-btn:hover:not(:disabled){border-color:#C8A45C;background:rgba(200,164,92,0.07)}
+.skill-btn:disabled{opacity:0.25;cursor:not-allowed}
+.skill-btn .sk-cnt{background:rgba(200,164,92,0.18);padding:0 3px;border-radius:2px;font-size:0.55rem}
+.action-bar{display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap;align-items:center;flex-shrink:0}
+.action-btn{padding:0.45rem 1rem;border-radius:4px;border:none;cursor:pointer;font-size:0.78rem;font-weight:500;transition:all .3s;letter-spacing:0.03em}
+.action-btn.start-pick{background:linear-gradient(135deg,#A88B3C,#C8A45C);color:#06060a}
+.action-btn.start-pick:hover{box-shadow:0 4px 15px rgba(200,164,92,0.3)}
+.action-btn.stop-pick{background:#B8342F;color:#fff;animation:btnPulse 1s infinite}
+@keyframes btnPulse{0%,100%{box-shadow:0 0 5px rgba(184,52,47,0.3)}50%{box-shadow:0 0 20px rgba(184,52,47,0.6)}}
+.action-btn.confirm{background:#3A8C6E;color:#fff}.action-btn.confirm:hover{background:#45a07e}
+.action-btn.skip{background:transparent;border:1px solid rgba(200,164,92,0.25);color:#C8A45C}
+.action-btn.submit{background:linear-gradient(135deg,#B8342F,#D94A4A);color:#fff;font-size:0.9rem;padding:0.55rem 2rem}
+.action-btn.submit:disabled{opacity:0.25;cursor:not-allowed}
+.action-btn.submit:hover:not(:disabled){box-shadow:0 4px 15px rgba(184,52,47,0.4)}
+.game-footer{background:rgba(12,12,18,0.92);border-top:1px solid rgba(200,164,92,0.12);padding:0.5rem 1.2rem;text-align:center;font-size:0.75rem;color:#8B7D5C;backdrop-filter:blur(10px);flex-shrink:0}
+.modal-overlay{position:fixed;inset:0;background:rgba(6,6,10,0.85);z-index:100;display:none;justify-content:center;align-items:center;backdrop-filter:blur(4px)}
+.modal-overlay.active{display:flex}
+.modal-box{background:#1c1a26;border:1px solid rgba(200,164,92,0.2);border-radius:10px;padding:1.25rem;max-width:580px;width:92%;max-height:80vh;overflow-y:auto;position:relative}
+.modal-close{position:absolute;top:0.7rem;right:0.7rem;background:none;border:none;color:#8B7D5C;cursor:pointer;font-size:1rem;transition:color .2s}.modal-close:hover{color:#C8A45C}
+.modal-title{font-family:'Ma Shan Zheng',cursive;font-size:1.4rem;color:#C8A45C;margin-bottom:0.8rem;text-align:center}
+.modal-hero-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:0.4rem}
+.modal-hero-card{background:rgba(26,24,36,0.8);border:1px solid rgba(200,164,92,0.12);border-radius:6px;padding:0.4rem;cursor:pointer;transition:all .2s;text-align:center;font-size:0.7rem}
+.modal-hero-card:hover{border-color:#C8A45C;background:rgba(200,164,92,0.05)}
+.modal-pos-list{display:flex;flex-direction:column;gap:0.4rem}
+.modal-pos-item{background:rgba(26,24,36,0.8);border:1px solid rgba(200,164,92,0.12);border-radius:6px;padding:0.5rem 0.7rem;cursor:pointer;transition:all .2s;display:flex;justify-content:space-between;align-items:center;font-size:0.78rem}
+.modal-pos-item:hover{border-color:#C8A45C;background:rgba(200,164,92,0.05)}
+#toast-container{position:fixed;top:0.75rem;right:0.75rem;z-index:200;display:flex;flex-direction:column;gap:0.4rem;pointer-events:none}
+.toast{padding:0.5rem 1rem;border-radius:4px;font-size:0.75rem;animation:toastIn .3s ease,toastOut .3s ease 2.7s forwards;max-width:320px}
+.toast-error{background:rgba(184,52,47,0.92);color:#fff;border:1px solid rgba(217,74,74,0.4)}
+.toast-success{background:rgba(58,140,110,0.92);color:#fff;border:1px solid rgba(74,217,122,0.4)}
+.toast-info{background:rgba(200,164,92,0.92);color:#06060a;border:1px solid rgba(232,213,163,0.4)}
+@keyframes toastIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes toastOut{from{opacity:1}to{opacity:0;transform:translateY(-10px)}}
+.result-container{text-align:center;max-width:680px;margin:0 auto;padding:1.5rem;width:100%}
+.result-winner{font-family:'Ma Shan Zheng',cursive;font-size:clamp(2rem,5vw,3.5rem);margin:1rem 0 0.5rem}
+.result-winner.a-win{color:#6BA4E0;text-shadow:0 0 30px rgba(74,144,217,0.4)}
+.result-winner.b-win{color:#E06B6B;text-shadow:0 0 30px rgba(217,74,74,0.4)}
+.result-draw{color:#C8A45C;text-shadow:0 0 30px rgba(200,164,92,0.4)}
+.result-mvp{font-size:1.1rem;color:#C8A45C;margin:0.8rem 0}
+.result-battle{background:rgba(18,17,26,0.6);border:1px solid rgba(200,164,92,0.12);border-radius:8px;padding:0.8rem;margin:1rem 0;text-align:left;font-size:0.78rem;line-height:1.7;max-height:45vh;overflow-y:auto}
+.result-battle .pos-battle{padding:0.4rem 0;border-bottom:1px solid rgba(200,164,92,0.06)}.result-battle .pos-battle:last-child{border-bottom:none}
+.pos-result-win{color:#4AD97A}.pos-result-lose{color:#D94A4A}.pos-result-draw{color:#C8A45C}
+.battle-anim{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:1rem}
+.battle-anim .sword-icon{font-size:3rem;color:#C8A45C;animation:swordClash 0.6s ease-in-out infinite alternate}
+@keyframes swordClash{0%{transform:rotate(-15deg) scale(0.9)}100%{transform:rotate(15deg) scale(1.1)}}
+.battle-anim .dots::after{content:'';animation:dots 1.5s steps(4) infinite}
+@keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+.rule-section{margin-bottom:0.8rem}
+.rule-section h3{color:#C8A45C;font-size:0.88rem;margin-bottom:0.3rem;display:flex;align-items:center;gap:0.3rem}
+.rule-section p,.rule-section li{color:#A88B3C;font-size:0.75rem;line-height:1.7}
+.rule-section ul{padding-left:1rem}
+.rule-table{width:100%;border-collapse:collapse;font-size:0.7rem;margin:0.4rem 0}
+.rule-table th,.rule-table td{border:1px solid rgba(200,164,92,0.12);padding:0.25rem 0.5rem;text-align:left}
+.rule-table th{background:rgba(200,164,92,0.06);color:#C8A45C}
+.free-pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:0.35rem;overflow-y:auto;flex:1;padding:0.2rem;align-content:start}
+.free-pick-card{background:rgba(26,24,36,0.9);border:1px solid rgba(200,164,92,0.12);border-radius:6px;padding:0.35rem;cursor:pointer;transition:all .2s;text-align:center;font-size:0.68rem}
+.free-pick-card:hover{border-color:#C8A45C;background:rgba(200,164,92,0.05)}
+.free-pick-card.selected{border-color:#C8A45C;box-shadow:0 0 10px rgba(200,164,92,0.4);background:rgba(200,164,92,0.06)}
+.held-indicator{position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:rgba(26,24,36,0.95);border:1px solid #C8A45C;border-radius:8px;padding:0.5rem 1.2rem;display:flex;align-items:center;gap:0.6rem;z-index:50;box-shadow:0 4px 20px rgba(200,164,92,0.3);animation:heldIn .3s ease}
+@keyframes heldIn{from{transform:translateX(-50%) translateY(20px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
+@media(prefers-reduced-motion:reduce){*{animation-duration:0.01ms!important;transition-duration:0.01ms!important}}
+</style>
+</head>
+<body>
+<div class="bg-pattern"></div>
+<div id="toast-container"></div>
+<div id="held-indicator" style="display:none"></div>
+
+<!-- 首页 -->
+<div id="page-home" class="page active items-center justify-center" style="min-height:100vh">
+  <div class="text-center relative z-10 px-4">
+    <div class="home-title">三国对抗赛</div>
+    <div class="home-subtitle">策略选将 · AI裁判</div>
+    <div class="home-divider"></div>
+    <p class="text-gold-700 text-sm mb-8 max-w-md mx-auto leading-relaxed">轮流选将与点将，运用消卡换卡智谋，<br>组建最强八人阵容，由AI裁决策一胜负</p>
+    <div class="flex gap-4 justify-center flex-wrap">
+      <button class="btn-primary" onclick="startGame()">开始对局</button>
+      <button class="btn-outline" onclick="showModal('modal-rules')"><i class="fa-solid fa-scroll mr-2"></i>规则说明</button>
+    </div>
+    <div class="mt-10 flex gap-8 justify-center text-gold-700 text-xs">
+      <div class="flex items-center gap-2"><i class="fa-solid fa-users"></i>本地双人</div>
+      <div class="flex items-center gap-2"><i class="fa-solid fa-robot"></i>AI裁判</div>
+      <div class="flex items-center gap-2"><i class="fa-solid fa-chess"></i>策略对抗</div>
+    </div>
+  </div>
+</div>
+
+<!-- 对战页 -->
+<div id="page-game" class="page">
+  <header class="game-header flex items-center justify-between flex-wrap gap-2">
+    <div class="flex items-center gap-3">
+      <span class="text-gold-500 font-bold text-sm font-brush">三国对抗赛</span>
+      <button class="text-gold-700 text-xs hover:text-gold-500 transition" onclick="showModal('modal-rules')"><i class="fa-solid fa-circle-question mr-1"></i>规则</button>
+    </div>
+    <div id="turn-info" class="turn-badge player-a"></div>
+    <div id="score-info" class="text-xs text-gold-700"></div>
+  </header>
+  <main class="game-board">
+    <section class="lineup-panel" id="panel-a">
+      <div class="panel-title a-title"><i class="fa-solid fa-flag mr-1"></i>玩家A（擂主）</div>
+      <div id="lineup-a" class="lineup-grid"></div>
+    </section>
+    <section class="center-panel">
+      <div class="skill-bar" id="skill-bar"></div>
+      <div class="pick-area" id="pick-area">
+        <div class="pick-area-title" id="pick-title">等待开始</div>
+        <div class="hero-cards-row" id="hero-cards"></div>
+      </div>
+      <div class="action-bar" id="action-bar"></div>
+    </section>
+    <section class="lineup-panel" id="panel-b">
+      <div class="panel-title b-title"><i class="fa-solid fa-flag mr-1"></i>玩家B（挑战者）</div>
+      <div id="lineup-b" class="lineup-grid"></div>
+    </section>
+  </main>
+  <footer class="game-footer"><span id="footer-hint">准备开始对局</span></footer>
+</div>
+
+<!-- 计算中 -->
+<div id="page-battle" class="page items-center justify-center">
+  <div class="battle-anim">
+    <div class="sword-icon"><i class="fa-solid fa-khanda"></i></div>
+    <div class="text-gold-500 font-brush text-2xl">AI裁判正在评判<span class="dots"></span></div>
+    <div class="text-gold-700 text-sm mt-2">分析阵容 · 模拟对战 · 生成战报</div>
+  </div>
+</div>
+
+<!-- 结果页 -->
+<div id="page-result" class="page items-center justify-center" style="padding:1.5rem">
+  <div class="result-container" id="result-content"></div>
+</div>
+
+<!-- 弹窗：规则 -->
+<div id="modal-rules" class="modal-overlay" onclick="if(event.target===this)closeModal(this.id)">
+  <div class="modal-box" style="max-width:520px">
+    <button class="modal-close" onclick="closeModal('modal-rules')"><i class="fa-solid fa-xmark"></i></button>
+    <div class="modal-title">对局规则</div>
+    <div class="rule-section"><h3><i class="fa-solid fa-chess-board"></i> 阵容结构</h3>
+      <p>每方8个位置，必须全部填满：</p>
+      <table class="rule-table"><tr><th>位置</th><th>说明</th></tr>
+        <tr><td><i class="fa-solid fa-crown text-gold-500 mr-1"></i>主公</td><td style="color:#6BA4E0">只能放置蓝色人物</td></tr>
+        <tr><td><i class="fa-solid fa-hat-wizard text-gold-500 mr-1"></i>军师</td><td>智力优先</td></tr>
+        <tr><td><i class="fa-solid fa-shield-halved text-gold-500 mr-1"></i>元帅</td><td>综合能力</td></tr>
+        <tr><td><i class="fa-solid fa-bolt text-gold-500 mr-1"></i>先锋</td><td>武力优先</td></tr>
+        <tr><td><i class="fa-solid fa-horse text-gold-500 mr-1"></i>骑兵</td><td>武力+机动</td></tr>
+        <tr><td><i class="fa-solid fa-ship text-gold-500 mr-1"></i>水军</td><td>水战加成</td></tr>
+        <tr><td><i class="fa-solid fa-boxes-stacked text-gold-500 mr-1"></i>后勤</td><td>辅助能力</td></tr>
+        <tr><td><i class="fa-solid fa-user-secret text-gold-500 mr-1"></i>间谍</td><td>智谋+潜伏</td></tr>
+      </table>
+    </div>
+    <div class="rule-section"><h3><i class="fa-solid fa-arrow-right-arrow-left"></i> 选人顺序</h3>
+      <ul><li>第1步：擂主(A) 选 1 人</li><li>第2步：对手(B) 选 2 人</li><li>之后：双方轮流，每次选 1~2 人</li></ul>
+    </div>
+    <div class="rule-section"><h3><i class="fa-solid fa-dice"></i> 点将</h3>
+      <p>点击「开始点将」→ 卡池滚动 → 点击「停止」→ 从展示角色中选择放入阵容空位</p>
+    </div>
+    <div class="rule-section"><h3><i class="fa-solid fa-wand-magic-sparkles"></i> 技能卡（各1次）</h3>
+      <ul><li><b>消卡</b>：双方同一位置均有角色时，同时删除</li><li><b>换卡</b>：双方同一位置均有角色时，交换</li><li><b>任选</b>：跳过点将，直接从所有可用角色中选</li><li><b>禁人</b>：禁掉一个角色，之后双方都不能选</li><li><b>重摇</b>：点将结果不满意时重新摇</li></ul>
+    </div>
+    <div class="rule-section"><h3><i class="fa-solid fa-trophy"></i> 胜负判定</h3>
+      <p>阵容满后提交，AI裁判按位置逐一模拟对决，综合判定胜负并选出MVP</p>
+    </div>
+  </div>
+</div>
+
+<!-- 弹窗：消卡选位 -->
+<div id="modal-eliminate" class="modal-overlay" onclick="if(event.target===this)closeModal(this.id)">
+  <div class="modal-box" style="max-width:360px">
+    <button class="modal-close" onclick="closeModal('modal-eliminate')"><i class="fa-solid fa-xmark"></i></button>
+    <div class="modal-title">消卡 · 选择位置</div>
+    <p class="text-xs text-gold-700 mb-3 text-center">选择一个双方均有角色的位置，双方该位置角色将同时移除</p>
+    <div id="eliminate-pos-list" class="modal-pos-list"></div>
+  </div>
+</div>
+
+<!-- 弹窗：换卡选位 -->
+<div id="modal-swap" class="modal-overlay" onclick="if(event.target===this)closeModal(this.id)">
+  <div class="modal-box" style="max-width:360px">
+    <button class="modal-close" onclick="closeModal('modal-swap')"><i class="fa-solid fa-xmark"></i></button>
+    <div class="modal-title">换卡 · 选择位置</div>
+    <p class="text-xs text-gold-700 mb-3 text-center">选择一个双方均有角色的位置，双方该位置角色将互换</p>
+    <div id="swap-pos-list" class="modal-pos-list"></div>
+  </div>
+</div>
+
+<!-- 弹窗：禁人 -->
+<div id="modal-ban" class="modal-overlay" onclick="if(event.target===this)closeModal(this.id)">
+  <div class="modal-box" style="max-width:500px">
+    <button class="modal-close" onclick="closeModal('modal-ban')"><i class="fa-solid fa-xmark"></i></button>
+    <div class="modal-title">禁人 · 选择角色</div>
+    <p class="text-xs text-gold-700 mb-3 text-center">选择一个角色将其禁用，之后双方均不可选</p>
+    <div id="ban-hero-grid" class="modal-hero-grid"></div>
+  </div>
+</div>
+
+<script>
+/* ========================================
+   角色数据
+   ======================================== */
+var HEROES=[
+  // 蓝色（可做主公）
+  {id:'liubei',name:'刘备',title:'仁德之主',color:'blue',force:65,intel:72,lead:95,special:'仁德'},
+  {id:'caocao',name:'曹操',title:'乱世奸雄',color:'blue',force:72,intel:92,lead:98,special:'奸雄'},
+  {id:'sunquan',name:'孙权',title:'紫髯碧眼',color:'blue',force:68,intel:80,lead:90,special:'制衡'},
+  {id:'yuanshao',name:'袁绍',title:'四世三公',color:'blue',force:55,intel:60,lead:85,special:'名门'},
+  {id:'liubiao',name:'刘表',title:'荆襄之主',color:'blue',force:40,intel:65,lead:75,special:'守成'},
+  {id:'mateng',name:'马腾',title:'西凉雄狮',color:'blue',force:78,intel:55,lead:80,special:'西凉'},
+  {id:'gongsunzan',name:'公孙瓒',title:'白马将军',color:'blue',force:75,intel:45,lead:70,special:'白马'},
+  {id:'dongzhuo',name:'董卓',title:'暴虐之主',color:'blue',force:82,intel:58,lead:78,special:'暴虐'},
+  // 红色（武将）
+  {id:'guanyu',name:'关羽',title:'武圣',color:'red',force:97,intel:70,lead:85,special:'武圣'},
+  {id:'zhangfei',name:'张飞',title:'万人敌',color:'red',force:98,intel:30,lead:60,special:'咆哮'},
+  {id:'lvbu',name:'吕布',title:'飞将',color:'red',force:100,intel:25,lead:40,special:'无双'},
+  {id:'huangzhong',name:'黄忠',title:'老当益壮',color:'red',force:92,intel:55,lead:65,special:'烈弓'},
+  {id:'machao',name:'马超',title:'锦马超',color:'red',force:96,intel:35,lead:55,special:'铁骑'},
+  {id:'xuchu',name:'许褚',title:'虎痴',color:'red',force:94,intel:20,lead:45,special:'裸衣'},
+  {id:'dianwei',name:'典韦',title:'古之恶来',color:'red',force:95,intel:15,lead:40,special:'强袭'},
+  {id:'xiaohoudun',name:'夏侯惇',title:'独眼将军',color:'red',force:88,intel:40,lead:65,special:'刚烈'},
+  {id:'ganning',name:'甘宁',title:'锦帆贼',color:'red',force:90,intel:55,lead:60,special:'奇袭'},
+  {id:'taishici',name:'太史慈',title:'东莱第一',color:'red',force:91,intel:50,lead:58,special:'天义'},
+  // 绿色（智将）
+  {id:'zhugeliang',name:'诸葛亮',title:'卧龙',color:'green',force:35,intel:100,lead:92,special:'观星'},
+  {id:'zhouyu',name:'周瑜',title:'美周郎',color:'green',force:60,intel:97,lead:88,special:'火攻'},
+  {id:'simayi',name:'司马懿',title:'冢虎',color:'green',force:40,intel:96,lead:85,special:'隐忍'},
+  {id:'pangtong',name:'庞统',title:'凤雏',color:'green',force:30,intel:95,lead:75,special:'连环'},
+  {id:'xushu',name:'徐庶',title:'单福',color:'green',force:55,intel:88,lead:70,special:'举荐'},
+  {id:'xunyu',name:'荀彧',title:'王佐之才',color:'green',force:30,intel:94,lead:90,special:'驱虎'},
+  {id:'guojia',name:'郭嘉',title:'鬼才',color:'green',force:25,intel:98,lead:80,special:'遗计'},
+  {id:'jiaxu',name:'贾诩',title:'毒士',color:'green',force:20,intel:95,lead:72,special:'乱武'},
+  {id:'lusu',name:'鲁肃',title:'忠厚长者',color:'green',force:35,intel:85,lead:82,special:'缔盟'},
+  {id:'lvmeng',name:'吕蒙',title:'白衣渡江',color:'green',force:72,intel:82,lead:75,special:'克己'},
+  // 黄色（特殊）
+  {id:'diaochan',name:'貂蝉',title:'绝世佳人',color:'yellow',force:15,intel:88,lead:70,special:'离间'},
+  {id:'huanggai',name:'黄盖',title:'苦肉计',color:'yellow',force:75,intel:60,lead:65,special:'苦肉'},
+  {id:'jiangwei',name:'姜维',title:'龙凤之后',color:'yellow',force:80,intel:90,lead:78,special:'挑衅'},
+  {id:'weiyan',name:'魏延',title:'反骨之将',color:'yellow',force:85,intel:55,lead:50,special:'狂骨'},
+  {id:'zhangliao',name:'张辽',title:'威震逍遥',color:'yellow',force:90,intel:75,lead:82,special:'突袭'},
+  {id:'chengpu',name:'程普',title:'三朝老将',color:'yellow',force:70,intel:55,lead:68,special:'醇酒'},
+  {id:'xiahouyuan',name:'夏侯渊',title:'疾行将军',color:'yellow',force:85,intel:50,lead:62,special:'神速'}
+];
+
+var POSITIONS=[
+  {id:'lord',name:'主公',icon:'fa-crown'},
+  {id:'strategist',name:'军师',icon:'fa-hat-wizard'},
+  {id:'commander',name:'元帅',icon:'fa-shield-halved'},
+  {id:'vanguard',name:'先锋',icon:'fa-bolt'},
+  {id:'cavalry',name:'骑兵',icon:'fa-horse'},
+  {id:'navy',name:'水军',icon:'fa-ship'},
+  {id:'logistics',name:'后勤',icon:'fa-boxes-stacked'},
+  {id:'spy',name:'间谍',icon:'fa-user-secret'}
+];
+
+// 位置权重（计算位置战力时各属性比例）
+var POS_WEIGHTS={
+  lord:{force:0.15,intel:0.25,lead:0.6},
+  strategist:{force:0.05,intel:0.7,lead:0.25},
+  commander:{force:0.3,intel:0.3,lead:0.4},
+  vanguard:{force:0.7,intel:0.15,lead:0.15},
+  cavalry:{force:0.6,intel:0.15,lead:0.25},
+  navy:{force:0.25,intel:0.5,lead:0.25},
+  logistics:{force:0.15,intel:0.3,lead:0.55},
+  spy:{force:0.15,intel:0.6,lead:0.25}
+};
+
+/* ========================================
+   游戏状态
+   ======================================== */
+var G={};
+
+function initState(){
+  var emptyLineup={};
+  POSITIONS.forEach(function(p){emptyLineup[p.id]=null;});
+  G={
+    phase:'home',
+    currentPlayer:'A',
+    turnNumber:0,
+    picksThisTurn:0,
+    maxPicksThisTurn:1,
+    lineupA:JSON.parse(JSON.stringify(emptyLineup)),
+    lineupB:JSON.parse(JSON.stringify(emptyLineup)),
+    usedHeroes:{},
+    bannedHeroes:{},
+    skills:{eliminate:1,swap:1,freePick:1,ban:1,reroll:1},
+    displayHeroes:[],
+    isRolling:false,
+    rollTimer:null,
+    selectedDisplayIdx:null,
+    heldHero:null,
+    freePickMode:false,
+    turnPhase:'skill',
+    isPatchTurn:false,
+    result:null
+  };
+}
+initState();
+
+/* ========================================
+   工具函数
+   ======================================== */
+function getHero(id){for(var i=0;i<HEROES.length;i++){if(HEROES[i].id===id)return HEROES[i];}return null;}
+function getLineup(p){return p==='A'?G.lineupA:G.lineupB;}
+function countLineup(p){var l=getLineup(p);var c=0;POSITIONS.forEach(function(pos){if(l[pos.id])c++;});return c;}
+function isUsed(id){return !!G.usedHeroes[id];}
+function isBanned(id){return !!G.bannedHeroes[id];}
+function getAvailable(){return HEROES.filter(function(h){return !isUsed(h.id)&&!isBanned(h.id);});}
+function colorClass(c){return 'color-'+c;}
+function heroColor(c){return c==='blue'?'#6BA4E0':c==='red'?'#E06B6B':c==='green'?'#4AD97A':'#D9C84A';}
+
+function showToast(msg,type){
+  type=type||'error';
+  var c=document.getElementById('toast-container');
+  var t=document.createElement('div');
+  t.className='toast toast-'+type;
+  t.textContent=msg;
+  c.appendChild(t);
+  setTimeout(function(){if(t.parentNode)t.remove();},3000);
+}
+
+function showModal(id){document.getElementById(id).classList.add('active');}
+function closeModal(id){document.getElementById(id).classList.remove('active');}
+
+function switchPage(id){
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+  document.getElementById(id).classList.add('active');
+}
+
+/* ========================================
+   背景粒子
+   ======================================== */
+(function(){
+  for(var i=0;i<18;i++){
+    var p=document.createElement('div');
+    p.className='float-particle';
+    p.style.left=Math.random()*100+'%';
+    p.style.animationDuration=(8+Math.random()*12)+'s';
+    p.style.animationDelay=(Math.random()*10)+'s';
+    var sz=1+Math.random()*1.5;
+    p.style.width=sz+'px';p.style.height=sz+'px';
+    document.body.appendChild(p);
+  }
+})();
+
+/* ========================================
+   选人回合逻辑
+   ======================================== */
+function getTurnConfig(){
+  var cA=countLineup('A'),cB=countLineup('B');
+  if(cA>=8&&cB>=8) return null;
+  var t=G.turnNumber;
+  if(t===0){if(cA>=8){G.turnNumber++;return getTurnConfig();}return {player:'A',min:1,max:1};}
+  if(t===1){if(cB>=8){G.turnNumber++;return getTurnConfig();}return {player:'B',min:2,max:2};}
+  var player=t%2===0?'A':'B';
+  var cnt=player==='A'?cA:cB;
+  if(cnt>=8){G.turnNumber++;return getTurnConfig();}
+  var remaining=8-cnt;
+  return {player:player,min:1,max:Math.min(2,remaining)};
+}
+
+function advanceTurn(){
+  G.picksThisTurn=0;
+  G.heldHero=null;
+  G.selectedDisplayIdx=null;
+  G.freePickMode=false;
+  G.displayHeroes=[];
+  updateHeldIndicator();
+
+  var cA=countLineup('A'),cB=countLineup('B');
+  if(cA>=8&&cB>=8){G.phase='arrange';render();return;}
+
+  if(G.isPatchTurn){
+    if(cA<8&&cB<8){G.currentPlayer=G.currentPlayer==='A'?'B':'A';}
+    else if(cA<8){G.currentPlayer='A';}
+    else{G.currentPlayer='B';}
+    var need=G.currentPlayer==='A'?(8-cA):(8-cB);
+    G.maxPicksThisTurn=Math.min(2,need);
+    G.turnPhase='skill';
+    render();
+    return;
+  }
+
+  G.turnNumber++;
+  G.turnPhase='skill';
+  var cfg=getTurnConfig();
+  if(!cfg){G.phase='arrange';render();return;}
+  G.currentPlayer=cfg.player;
+  G.maxPicksThisTurn=cfg.max;
+  render();
+}
+
+function canSubmit(){
+  if(countLineup('A')<8||countLineup('B')<8) return false;
+  var lordA=G.lineupA.lord;
+  if(lordA&&getHero(lordA).color!=='blue') return false;
+  var lordB=G.lineupB.lord;
+  if(lordB&&getHero(lordB).color!=='blue') return false;
+  return true;
+}
+
+/* ========================================
+   点将逻辑
+   ======================================== */
+function startRolling(){
+  var avail=getAvailable();
+  if(avail.length<2){showToast('可用角色不足');return;}
+  G.isRolling=true;
+  G.displayHeroes=[];
+  G.selectedDisplayIdx=null;
+  G.rollTimer=setInterval(function(){
+    var pool=getAvailable();
+    var shuffled=pool.slice().sort(function(){return Math.random()-0.5;});
+    G.displayHeroes=shuffled.slice(0,Math.min(5,shuffled.length));
+    renderHeroCards();
+  },85);
+  render();
+}
+
+function stopRolling(){
+  if(!G.isRolling) return;
+  G.isRolling=false;
+  clearInterval(G.rollTimer);
+  var seen={};
+  var pool=getAvailable();
+  var result=[];
+  var shuffled=pool.slice().sort(function(){return Math.random()-0.5;});
+  for(var i=0;i<shuffled.length&&result.length<5;i++){
+    if(!seen[shuffled[i].id]){seen[shuffled[i].id]=true;result.push(shuffled[i]);}
+  }
+  G.displayHeroes=result;
+  var cards=document.querySelectorAll('#hero-cards .hero-card');
+  cards.forEach(function(card,i){
+    setTimeout(function(){
+      card.classList.remove('rolling');
+      card.classList.add('stopped');
+      setTimeout(function(){card.classList.remove('stopped');},400);
+    },i*180);
+  });
+  setTimeout(function(){render();},result.length*180+100);
+}
+
+function reroll(){
+  if(G.skills.reroll<=0){showToast('重摇次数已用完');return;}
+  if(G.isRolling) return;
+  G.skills.reroll--;
+  G.selectedDisplayIdx=null;
+  startRolling();
+  showToast('已消耗重摇次数','info');
+}
+
+/* ========================================
+   角色放置
+   ======================================== */
+function placeHero(heroId,posId,player){
+  var hero=getHero(heroId);
+  if(!hero) return false;
+  var lineup=getLineup(player);
+  if(posId==='lord'&&hero.color!=='blue'){showToast('主公位只能放置蓝色人物');return false;}
+  if(lineup[posId]){showToast('该位置已有角色');return false;}
+  lineup[posId]=heroId;
+  G.usedHeroes[heroId]=true;
+  G.heldHero=null;
+  G.selectedDisplayIdx=null;
+  G.displayHeroes=G.displayHeroes.filter(function(h){return h.id!==heroId;});
+  updateHeldIndicator();
+  return true;
+}
+
+/* ========================================
+   手持指示器
+   ======================================== */
+function updateHeldIndicator(){
+  var el=document.getElementById('held-indicator');
+  if(!G.heldHero){el.style.display='none';return;}
+  var h=getHero(G.heldHero);
+  el.style.display='flex';
+  el.innerHTML='<span style="font-size:0.7rem;color:#8B7D5C">已选择：</span>'+
+    '<span style="font-family:Ma Shan Zheng,cursive;font-size:1.1rem;color:'+heroColor(h.color)+'">'+h.name+'</span>'+
+    '<span style="font-size:0.65rem;color:#8B7D5C">'+h.title+'</span>'+
+    '<span style="font-size:0.65rem;color:#A88B3C">武'+h.force+' 智'+h.intel+' 统'+h.lead+'</span>'+
+    '<span style="font-size:0.65rem;color:#C8A45C"><i class="fa-solid fa-arrow-left mr-1"></i>点击阵容空位放置</span>';
+}
+
+/* ========================================
+   技能卡逻辑
+   ======================================== */
+function getBothFilledPositions(){
+  return POSITIONS.filter(function(p){return G.lineupA[p.id]&&G.lineupB[p.id];});
+}
+
+function afterSkillUse(){
+  var cA=countLineup('A'),cB=countLineup('B');
+  G.heldHero=null;G.selectedDisplayIdx=null;G.displayHeroes=[];G.freePickMode=false;
+  updateHeldIndicator();
+  if(cA>=8&&cB>=8){G.phase='arrange';render();return;}
+  G.phase='draft';G.turnPhase='skill';G.isPatchTurn=true;
+  if(cA<=cB) G.currentPlayer='A'; else G.currentPlayer='B';
+  var need=G.currentPlayer==='A'?(8-cA):(8-cB);
+  G.maxPicksThisTurn=Math.min(2,need);G.picksThisTurn=0;
+  render();
+}
+
+function doEliminate(posId){
+  var heroA=G.lineupA[posId],heroB=G.lineupB[posId];
+  if(!heroA||!heroB) return;
+  delete G.usedHeroes[heroA];delete G.usedHeroes[heroB];
+  G.lineupA[posId]=null;G.lineupB[posId]=null;
+  G.skills.eliminate--;
+  closeModal('modal-eliminate');
+  showToast(POSITIONS.filter(function(p){return p.id===posId;})[0].name+'位双方角色已消除','success');
+  afterSkillUse();
+}
+
+function doSwap(posId){
+  var heroA=G.lineupA[posId],heroB=G.lineupB[posId];
+  if(!heroA||!heroB) return;
+  G.lineupA[posId]=heroB;G.lineupB[posId]=heroA;
+  G.skills.swap--;
+  closeModal('modal-swap');
+  showToast(POSITIONS.filter(function(p){return p.id===posId;})[0].name+'位双方角色已互换','success');
+  afterSkillUse();
+}
+
+function doBan(heroId){
+  if(isBanned(heroId)||isUsed(heroId)) return;
+  G.bannedHeroes[heroId]=true;
+  G.skills.ban--;
+  closeModal('modal-ban');
+  var hero=getHero(heroId);
+  showToast(hero.name+' 已被禁用','info');
+  render();
+}
+
+function activateFreePick(){
+  if(G.skills.freePick<=0){showToast('任选次数已用完');return;}
+  G.skills.freePick--;
+  G.freePickMode=true;G.turnPhase='pick';
+  showToast('已进入任选模式，直接选择角色','info');
+  render();
+}
+
+/* ========================================
+   AI裁判系统
+   ======================================== */
+function calcPosPower(heroId,posId){
+  var hero=getHero(heroId);var w=POS_WEIGHTS[posId];
+  return hero.force*w.force+hero.intel*w.intel+hero.lead*w.lead;
+}
+
+function aiJudge(){
+  var battles=[];var scoreA=0,scoreB=0;var mvpHero=null,mvpPower=0;
+  var winDescs=[
+    function(a,b){return a.name+'以'+a.special+'之威压制'+b.name;},
+    function(a,b){return a.name+'大展身手，'+b.name+'难以招架';},
+    function(a,b){return a.name+'势如破竹，击溃'+b.name;},
+    function(a,b){return a.name+'技高一筹，'+b.name+'败下阵来';}
+  ];
+  var drawDescs=[
+    function(a,b){return a.name+'与'+b.name+'激战数百回合，不分高下';},
+    function(a,b){return a.name+'与'+b.name+'旗鼓相当，暂且打成平手';}
+  ];
+
+  POSITIONS.forEach(function(pos){
+    var hA=G.lineupA[pos.id],hB=G.lineupB[pos.id];
+    var posName=pos.name;
+    var heroA=hA?getHero(hA):null,heroB=hB?getHero(hB):null;
+
+    if(!heroA&&!heroB){
+      battles.push({pos:posName,result:'draw',desc:'双方'+posName+'位均空缺，无法交锋',heroA:null,heroB:null});
+      scoreA+=0.5;scoreB+=0.5;return;
+    }
+    if(!heroA){
+      battles.push({pos:posName,result:'B',desc:'A方'+posName+'位空缺，'+heroB.name+'不战而胜',heroA:null,heroB:heroB});
+      scoreB+=1;var p=calcPosPower(hB,pos.id)*1.2;if(p>mvpPower){mvpPower=p;mvpHero=heroB;}return;
+    }
+    if(!heroB){
+      battles.push({pos:posName,result:'A',desc:'B方'+posName+'位空缺，'+heroA.name+'不战而胜',heroA:heroA,heroB:null});
+      scoreA+=1;var p2=calcPosPower(hA,pos.id)*1.2;if(p2>mvpPower){mvpPower=p2;mvpHero=heroA;}return;
+    }
+
+    var pA=calcPosPower(hA,pos.id);var pB=calcPosPower(hB,pos.id);
+    var rA=pA*(0.88+Math.random()*0.24);var rB=pB*(0.88+Math.random()*0.24);
+
+    var w=POS_WEIGHTS[pos.id];var bestStat=Math.max(w.force,w.intel,w.lead);
+    var matchA='',matchB='';
+    if(bestStat===w.force&&heroA.force>=85) matchA='（武力出众）';
+    else if(bestStat===w.intel&&heroA.intel>=85) matchA='（智力超群）';
+    else if(bestStat===w.lead&&heroA.lead>=85) matchA='（领导卓越）';
+    if(bestStat===w.force&&heroB.force>=85) matchB='（武力出众）';
+    else if(bestStat===w.intel&&heroB.intel>=85) matchB='（智力超群）';
+    else if(bestStat===w.lead&&heroB.lead>=85) matchB='（领导卓越）';
+
+    if(Math.abs(rA-rB)<2){
+      var df=drawDescs[Math.floor(Math.random()*drawDescs.length)];
+      battles.push({pos:posName,result:'draw',desc:df(heroA,heroB),heroA:heroA,heroB:heroB});
+      scoreA+=0.5;scoreB+=0.5;
+    }else if(rA>rB){
+      var wf=winDescs[Math.floor(Math.random()*winDescs.length)];
+      battles.push({pos:posName,result:'A',desc:wf(heroA,heroB)+matchA,heroA:heroA,heroB:heroB});
+      scoreA+=1;if(rA>mvpPower){mvpPower=rA;mvpHero=heroA;}
+    }else{
+      var wf2=winDescs[Math.floor(Math.random()*winDescs.length)];
+      battles.push({pos:posName,result:'B',desc:wf2(heroB,heroA)+matchB,heroA:heroA,heroB:heroB});
+      scoreB+=1;if(rB>mvpPower){mvpPower=rB;mvpHero=heroB;}
+    }
+  });
+
+  var winner='draw';
+  if(scoreA>scoreB) winner='A';else if(scoreB>scoreA) winner='B';
+
+  var summaryText='';
+  if(winner==='A'){
+    summaryText='玩家A阵容配合默契，各位置精兵强将，以'+scoreA.toFixed(1)+'分力压对手的'+scoreB.toFixed(1)+'分';
+    if(mvpHero) summaryText+='，其中'+mvpHero.name+'表现尤为突出';
+  }else if(winner==='B'){
+    summaryText='玩家B奇兵突起，以'+scoreB.toFixed(1)+'分逆转战局，击败了'+scoreA.toFixed(1)+'分的对手';
+    if(mvpHero) summaryText+='，'+mvpHero.name+'功不可没';
+  }else{
+    summaryText='双方势均力敌，各'+scoreA.toFixed(1)+'分，棋逢对手将遇良才';
+  }
+
+  return {winner:winner,summary:summaryText,mvp:mvpHero,battles:battles,scoreA:scoreA,scoreB:scoreB};
+}
+
+/* ========================================
+   渲染
+   ======================================== */
+function render(){
+  if(G.phase==='home'||G.phase==='battle') return;
+  renderTurnInfo();renderLineup('A');renderLineup('B');
+  renderSkillBar();renderPickArea();renderActionBar();renderFooter();renderScoreInfo();
+}
+
+function renderTurnInfo(){
+  var el=document.getElementById('turn-info');
+  if(G.phase==='arrange'){
+    el.className='turn-badge';el.innerHTML='<i class="fa-solid fa-check-circle mr-1"></i>阵容调整阶段';return;
+  }
+  var cfg=getTurnConfig();
+  if(!cfg){el.className='turn-badge';el.innerHTML='<i class="fa-solid fa-flag-checkered mr-1"></i>选将完成';return;}
+  el.className='turn-badge player-'+cfg.player.toLowerCase();
+  var pName=cfg.player==='A'?'玩家A（擂主）':'玩家B（挑战者）';
+  var remaining=G.maxPicksThisTurn-G.picksThisTurn;
+  var icon=cfg.player==='A'?'fa-flag':'fa-skull-crossbones';
+  el.innerHTML='<i class="fa-solid '+icon+' mr-1"></i>'+pName+' · 剩余选'+remaining+'人';
+}
+
+function renderScoreInfo(){
+  document.getElementById('score-info').textContent='A: '+countLineup('A')+'/8  |  B: '+countLineup('B')+'/8';
+}
+
+function renderLineup(player){
+  var container=document.getElementById('lineup-'+player.toLowerCase());
+  var lineup=getLineup(player);
+  var isCurrent=G.currentPlayer===player&&G.phase==='draft'&&G.turnPhase==='pick'&&G.heldHero;
+  var html='';
+  POSITIONS.forEach(function(pos){
+    var heroId=lineup[pos.id];
+    var isHighlight=false,isInvalid=false;
+    if(isCurrent&&heroId===null){
+      if(pos.id==='lord'&&G.heldHero&&getHero(G.heldHero).color!=='blue'){
+        isInvalid=true;
+      }else{
+        isHighlight=true;
+      }
+    }
+    var cls='lineup-slot';
+    if(heroId) cls+=' filled';
+    if(isHighlight) cls+=' highlight';
+    if(isInvalid) cls+=' highlight-invalid';
+    var clickAttr='';
+    if(isHighlight) clickAttr=' onclick="onSlotClick(\''+pos.id+'\',\''+player+'\')"';
+    if(isInvalid) clickAttr=' onclick="showToast(\'主公位只能放蓝色人物\')"';
+
+    html+='<div class="'+cls+'"'+clickAttr+'>';
+    html+='<div class="slot-label"><i class="fa-solid '+pos.icon+'" style="font-size:0.5rem"></i> '+pos.name;
+    if(pos.id==='lord') html+=' <span style="color:#6BA4E0;font-size:0.48rem">(蓝)</span>';
+    html+='</div>';
+    if(heroId){
+      var h=getHero(heroId);
+      html+='<div class="slot-hero-name" style="color:'+heroColor(h.color)+'">'+h.name+'</div>';
+      html+='<div class="slot-hero-title">'+h.title+'</div>';
+      html+='<div class="slot-hero-stats"><span>武'+h.force+'</span><span>智'+h.intel+'</span><span>统'+h.lead+'</span></div>';
+    }else{
+      var hint=isHighlight?'点击放置':isInvalid?'不可放置':'空';
+      html+='<div class="slot-empty">'+hint+'</div>';
+    }
+    html+='</div>';
+  });
+  container.innerHTML=html;
+}
+
+function renderSkillBar(){
+  var el=document.getElementById('skill-bar');
+  if(G.phase!=='draft'||G.turnPhase!=='skill'){el.innerHTML='';return;}
+  var bothFilled=getBothFilledPositions();
+  var canElim=G.skills.eliminate>0&&bothFilled.length>0;
+  var canSwap=G.skills.swap>0&&bothFilled.length>0;
+  var canBan=G.skills.ban>0&&getAvailable().length>0;
+  var canFree=G.skills.freePick>0;
+
+  el.innerHTML=
+    '<button class="skill-btn" '+(canElim?'':'disabled')+' onclick="openEliminate()"><i class="fa-solid fa-ban"></i>消卡<span class="sk-cnt">'+G.skills.eliminate+'</span></button>'+
+    '<button class="skill-btn" '+(canSwap?'':'disabled')+' onclick="openSwap()"><i class="fa-solid fa-right-left"></i>换卡<span class="sk-cnt">'+G.skills.swap+'</span></button>'+
+    '<button class="skill-btn" '+(canBan?'':'disabled')+' onclick="openBan()"><i class="fa-solid fa-lock"></i>禁人<span class="sk-cnt">'+G.skills.ban+'</span></button>'+
+    '<button class="skill-btn" '+(canFree?'':'disabled')+' onclick="activateFreePick()"><i class="fa-solid fa-hand-pointer"></i>任选<span class="sk-cnt">'+G.skills.freePick+'</span></button>';
+}
+
+function renderPickArea(){
+  var titleEl=document.getElementById('pick-title');
+  var cardsEl=document.getElementById('hero-cards');
+
+  if(G.phase==='arrange'){
+    titleEl.textContent='阵容调整阶段';
+    cardsEl.innerHTML='<div class="text-gold-700 text-sm text-center py-8">双方阵容已满，可使用技能卡调整，或提交阵容进行AI评判</div>';
+    renderArrangeSkillBar();return;
+  }
+
+  if(G.freePickMode){
+    titleEl.textContent='任选模式 — 从下方选择一个角色放入阵容';
+    renderFreePickGrid(cardsEl);return;
+  }
+
+  if(G.isRolling){
+    titleEl.textContent='点将中... 点击「停止」锁定角色';
+  }else if(G.displayHeroes.length>0&&!G.isRolling){
+    var rem=G.maxPicksThisTurn-G.picksThisTurn;
+    titleEl.textContent='已锁定 — 点击角色选择（本回合剩余'+rem+'人）';
+  }else{
+    titleEl.textContent=G.turnPhase==='skill'?'请先使用技能卡或直接「开始选人」':'点击「开始点将」抽取角色';
+  }
+
+  if(G.displayHeroes.length===0||G.isRolling){
+    if(!G.isRolling&&G.turnPhase==='pick'&&!G.freePickMode){
+      cardsEl.innerHTML='<div class="text-gold-700 text-sm text-center py-8">等待点将...</div>';
+    }else if(!G.isRolling&&G.displayHeroes.length===0&&G.turnPhase==='pick'){
+      cardsEl.innerHTML='';
+    }
+    return;
+  }
+  renderHeroCards();
+}
+
+function renderHeroCards(){
+  var cardsEl=document.getElementById('hero-cards');
+  var html='';
+  G.displayHeroes.forEach(function(hero,i){
+    var isSel=G.selectedDisplayIdx===i;
+    var cls=G.isRolling?'rolling':(isSel?'selected selectable':'selectable');
+    var c=heroColor(hero.color);
+    var borderStyle=isSel?'border-color:'+c:'';
+    html+='<div class="hero-card '+cls+'" onclick="onHeroCardClick('+i+')" style="'+borderStyle+'">';
+    html+='<div class="hc-name" style="color:'+c+'">'+hero.name+'</div>';
+    html+='<div class="hc-title">'+hero.title+'</div>';
+    html+='<div class="hc-stats">';
+    html+='<span class="hc-stat" style="color:#D94A4A">武'+hero.force+'</span>';
+    html+='<span class="hc-stat" style="color:#4AD97A">智'+hero.intel+'</span>';
+    html+='<span class="hc-stat" style="color:#C8A45C">统'+hero.lead+'</span>';
+    html+='</div>';
+    html+='<div class="hc-special">'+hero.special+'</div>';
+    html+='</div>';
+  });
+  cardsEl.innerHTML=html;
+}
+
+function renderFreePickGrid(container){
+  var avail=getAvailable();
+  var html='';
+  avail.forEach(function(hero){
+    var isSel=G.heldHero===hero.id;
+    var c=heroColor(hero.color);
+    html+='<div class="free-pick-card '+(isSel?'selected':'')+'" onclick="onFreePickClick(\''+hero.id+'\')">';
+    html+='<div style="color:'+c+';font-weight:700;font-size:0.82rem">'+hero.name+'</div>';
+    html+='<div style="color:#8B7D5C;font-size:0.5rem">'+hero.title+'</div>';
+    html+='<div style="font-size:0.5rem;color:#A88B3C;margin-top:2px">武'+hero.force+' 智'+hero.intel+' 统'+hero.lead+'</div>';
+    html+='</div>';
+  });
+  container.innerHTML=html;
+}
+
+function renderArrangeSkillBar(){
+  var el=document.getElementById('skill-bar');
+  var bothFilled=getBothFilledPositions();
+  var canElim=G.skills.eliminate>0&&bothFilled.length>0;
+  var canSwap=G.skills.swap>0&&bothFilled.length>0;
+  el.innerHTML=
+    '<button class="skill-btn" '+(canElim?'':'disabled')+' onclick="openEliminate()"><i class="fa-solid fa-ban"></i>消卡<span class="sk-cnt">'+G.skills.eliminate+'</span></button>'+
+    '<button class="skill-btn" '+(canSwap?'':'disabled')+' onclick="openSwap()"><i class="fa-solid fa-right-left"></i>换卡<span class="sk-cnt">'+G.skills.swap+'</span></button>';
+}
+
+function renderActionBar(){
+  var el=document.getElementById('action-bar');
+  if(G.phase==='arrange'){
+    var sub=canSubmit();
+    el.innerHTML='<button class="action-btn submit" '+(sub?'':'disabled')+' onclick="submitBattle()"><i class="fa-solid fa-gavel mr-1"></i>提交阵容 · AI评判</button>';
+    return;
+  }
+  if(G.phase!=='draft'){el.innerHTML='';return;}
+  var html='';
+  if(G.turnPhase==='skill'){
+    html+='<button class="action-btn start-pick" onclick="enterPickPhase()"><i class="fa-solid fa-play mr-1"></i>开始选人</button>';
+  }else if(G.turnPhase==='pick'){
+    if(G.freePickMode){
+      // 任选模式无需点将按钮
+    }else{
+      if(G.isRolling){
+        html+='<button class="action-btn stop-pick" onclick="stopRolling()"><i class="fa-solid fa-hand mr-1"></i>停止</button>';
+      }else if(G.displayHeroes.length>0&&!G.isRolling){
+        html+='<button class="action-btn skip" onclick="reroll()"><i class="fa-solid fa-rotate mr-1"></i>重摇('+G.skills.reroll+')</button>';
+      }else{
+        html+='<button class="action-btn start-pick" onclick="startRolling()"><i class="fa-solid fa-dice mr-1"></i>开始点将</button>';
+      }
+    }
+    if(G.picksThisTurn>0&&G.picksThisTurn<G.maxPicksThisTurn&&!G.heldHero){
+      html+='<button class="action-btn confirm" onclick="finishPickEarly()"><i class="fa-solid fa-forward mr-1"></i>结束选人（已选'+G.picksThisTurn+'人）</button>';
+    }
+  }
+  el.innerHTML=html;
+}
+
+function renderFooter(){
+  var el=document.getElementById('footer-hint');
+  if(G.phase==='arrange'){
+    var lordAOk=G.lineupA.lord&&getHero(G.lineupA.lord).color==='blue';
+    var lordBOk=G.lineupB.lord&&getHero(G.lineupB.lord).color==='blue';
+    var hints=[];
+    if(!lordAOk) hints.push('A方主公位需蓝色人物');
+    if(!lordBOk) hints.push('B方主公位需蓝色人物');
+    if(hints.length===0) hints.push('阵容合法，可提交进行AI评判');
+    el.textContent=hints.join(' | ');
+  }else if(G.phase==='draft'){
+    var cfg=getTurnConfig();
+    if(cfg){
+      var pName=cfg.player==='A'?'玩家A':'玩家B';
+      el.textContent=pName+'的回合 · 第'+(G.turnNumber+1)+'步 · 本回合选'+cfg.min+'~'+cfg.max+'人';
+    }else{el.textContent='';}
+  }else{el.textContent='';}
+}
+
+/* ========================================
+   事件处理
+   ======================================== */
+function startGame(){
+  initState();G.phase='draft';G.turnPhase='skill';
+  switchPage('page-game');render();
+}
+
+function enterPickPhase(){
+  G.turnPhase='pick';G.picksThisTurn=0;render();
+}
+
+function onHeroCardClick(idx){
+  if(G.isRolling) return;
+  if(G.heldHero){showToast('请先放置已选角色','info');return;}
+  var hero=G.displayHeroes[idx];
+  if(!hero) return;
+  if(isUsed(hero.id)){showToast('该角色已被使用');return;}
+  if(isBanned(hero.id)){showToast('该角色已被禁用');return;}
+  G.selectedDisplayIdx=idx;G.heldHero=hero.id;
+  updateHeldIndicator();render();
+}
+
+function onFreePickClick(heroId){
+  if(isUsed(heroId)){showToast('该角色已被使用');return;}
+  if(isBanned(heroId)){showToast('该角色已被禁用');return;}
+  G.heldHero=heroId;G.selectedDisplayIdx=null;
+  updateHeldIndicator();render();
+}
+
+function onSlotClick(posId,player){
+  if(player!==G.currentPlayer) return;
+  if(!G.heldHero) return;
+  if(G.phase!=='draft') return;
+  var success=placeHero(G.heldHero,posId,player);
+  if(!success) return;
+  G.picksThisTurn++;
+  if(G.picksThisTurn>=G.maxPicksThisTurn){
+    setTimeout(function(){advanceTurn();},300);
+  }else{render();}
+}
+
+function finishPickEarly(){advanceTurn();}
+
+function openEliminate(){
+  var bothFilled=getBothFilledPositions();
+  if(bothFilled.length===0){showToast('没有双方均已放人的位置');return;}
+  var list=document.getElementById('eliminate-pos-list');
+  var html='';
+  bothFilled.forEach(function(pos){
+    var hA=getHero(G.lineupA[pos.id]),hB=getHero(G.lineupB[pos.id]);
+    html+='<div class="modal-pos-item" onclick="doEliminate(\''+pos.id+'\')">';
+    html+='<span><i class="fa-solid '+pos.icon+' mr-2 text-gold-500"></i>'+pos.name+'</span>';
+    html+='<span class="text-xs text-gold-700">'+hA.name+' vs '+hB.name+'</span>';
+    html+='</div>';
+  });
+  list.innerHTML=html;showModal('modal-eliminate');
+}
+
+function openSwap(){
+  var bothFilled=getBothFilledPositions();
+  if(bothFilled.length===0){showToast('没有双方均已放人的位置');return;}
+  var list=document.getElementById('swap-pos-list');
+  var html='';
+  bothFilled.forEach(function(pos){
+    var hA=getHero(G.lineupA[pos.id]),hB=getHero(G.lineupB[pos.id]);
+    html+='<div class="modal-pos-item" onclick="doSwap(\''+pos.id+'\')">';
+    html+='<span><i class="fa-solid '+pos.icon+' mr-2 text-gold-500"></i>'+pos.name+'</span>';
+    html+='<span class="text-xs text-gold-700">A:'+hA.name+' ↔ B:'+hB.name+'</span>';
+    html+='</div>';
+  });
+  list.innerHTML=html;showModal('modal-swap');
+}
+
+function openBan(){
+  var avail=getAvailable();
+  if(avail.length===0){showToast('没有可禁用的角色');return;}
+  var grid=document.getElementById('ban-hero-grid');
+  var html='';
+  avail.forEach(function(hero){
+    var c=heroColor(hero.color);
+    html+='<div class="modal-hero-card" onclick="doBan(\''+hero.id+'\')">';
+    html+='<div style="color:'+c+';font-weight:700">'+hero.name+'</div>';
+    html+='<div style="color:#8B7D5C;font-size:0.55rem">'+hero.title+'</div>';
+    html+='<div style="margin-top:2px"><span class="color-dot '+colorClass(hero.color)+'"></span></div>';
+    html+='</div>';
+  });
+  grid.innerHTML=html;showModal('modal-ban');
+}
+
+function submitBattle(){
+  if(!canSubmit()){showToast('阵容不满足提交条件');return;}
+  G.phase='battle';switchPage('page-battle');
+  setTimeout(function(){
+    G.result=aiJudge();G.phase='result';renderResult();switchPage('page-result');
+  },2500);
+}
+
+/* ========================================
+   结果页渲染
+   ======================================== */
+function renderResult(){
+  var r=G.result;var el=document.getElementById('result-content');
+  var winnerClass=r.winner==='A'?'a-win':r.winner==='B'?'b-win':'result-draw';
+  var winnerText=r.winner==='draw'?'势均力敌 · 平局':(r.winner==='A'?'玩家A（擂主）获胜':'玩家B（挑战者）获胜');
+
+  var battlesHtml='';
+  r.battles.forEach(function(b){
+    var rc=b.result==='A'?'pos-result-win':b.result==='B'?'pos-result-lose':'pos-result-draw';
+    var rt=b.result==='A'?'A方胜':b.result==='B'?'B方胜':'平局';
+    var nameA=b.heroA?b.heroA.name:'空缺';var nameB=b.heroB?b.heroB.name:'空缺';
+    battlesHtml+='<div class="pos-battle">';
+    battlesHtml+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">';
+    battlesHtml+='<span style="font-weight:700;font-size:0.75rem">'+b.pos+'</span>';
+    battlesHtml+='<span style="font-size:0.7rem;'+rc+';font-weight:700">'+rt+'</span></div>';
+    battlesHtml+='<div style="font-size:0.7rem;color:#8B7D5C">'+nameA+' vs '+nameB+'</div>';
+    battlesHtml+='<div style="font-size:0.7rem;color:#A88B3C;margin-top:2px">'+b.desc+'</div>';
+    battlesHtml+='</div>';
+  });
+
+  el.innerHTML=
+    '<div style="color:#8B7D5C;font-size:0.8rem;letter-spacing:0.2em;margin-bottom:0.5rem">AI裁判 · 战报</div>'+
+    '<div class="result-winner '+winnerClass+'">'+winnerText+'</div>'+
+    '<div style="color:#8B7D5C;font-size:0.82rem;margin-bottom:1rem;line-height:1.7">'+r.summary+'</div>'+
+    (r.mvp?'<div class="result-mvp"><i class="fa-solid fa-star mr-2"></i>MVP：'+r.mvp.name+'（'+r.mvp.title+' · '+r.mvp.special+'）</div>':'')+
+    '<div style="font-size:0.75rem;color:#8B7D5C;margin-bottom:0.5rem">比分 A '+r.scoreA.toFixed(1)+' : '+r.scoreB.toFixed(1)+' B</div>'+
+    '<div class="result-battle">'+battlesHtml+'</div>'+
+    '<div style="display:flex;gap:1rem;justify-content:center;margin-top:1.5rem;flex-wrap:wrap">'+
+    '<button class="btn-primary" onclick="startGame()">再来一局</button>'+
+    '<button class="btn-outline" onclick="switchPage(\'page-home\')">返回首页</button></div>';
+}
+</script>
+</body>
+</html>
