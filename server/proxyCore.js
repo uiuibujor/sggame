@@ -27,11 +27,23 @@ export function loadEnvFromFile() {
 
 loadEnvFromFile();
 
+function readEnv(key) {
+  if (process.env[key]) {
+    return process.env[key];
+  }
+
+  if (typeof Netlify !== "undefined" && Netlify.env?.get) {
+    return Netlify.env.get(key);
+  }
+
+  return undefined;
+}
+
 export function getProxyConfig() {
   return {
-    port: Number(process.env.AI_PROXY_PORT || 8787),
-    model: process.env.SILICONFLOW_MODEL || "deepseek-ai/DeepSeek-V3.2",
-    apiKey: process.env.SILICONFLOW_API_KEY,
+    port: Number(readEnv("AI_PROXY_PORT") || 8787),
+    model: readEnv("SILICONFLOW_MODEL") || "deepseek-ai/DeepSeek-V3.2",
+    apiKey: readEnv("SILICONFLOW_API_KEY"),
     upstreamUrl: "https://api.siliconflow.cn/v1/chat/completions",
   };
 }
@@ -298,7 +310,7 @@ const EXACT_SYSTEM_PROMPT = `你是一个 “架空三国战争推演系统” �
 
 具有直播解说感`;
 
-function buildPrompt(gamePayload) {
+export function buildPrompt(gamePayload) {
   const user = [
     "请严格按照系统提示词执行，不要改写世界观、规则、阶段顺序和判断标准。",
     "胜负判断完全交给你根据过程推演决定，不要套用静态面板强弱。",
