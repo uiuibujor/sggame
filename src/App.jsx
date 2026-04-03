@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { cjk } from "@streamdown/cjk";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import LineupPanel from "./components/LineupPanel";
@@ -41,6 +42,7 @@ const AI_ROLL_MAX_MS = 3000;
 const AI_DRAFT_LOG_STORAGE_KEY = "sggame-ai-draft-log";
 const DRAFT_TURN_FLASH_MS = 1000;
 const POSITION_NAME_BY_ID = Object.fromEntries(POSITIONS.map((position) => [position.id, position.name]));
+const STREAMDOWN_PLUGINS = { cjk };
 
 function getRandomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -1331,7 +1333,7 @@ function App() {
                       </div>
                     )}
                     <div className="battle-markdown">
-                      <Streamdown>
+                      <Streamdown plugins={STREAMDOWN_PLUGINS} parseIncompleteMarkdown>
                         {displayedBattleMarkdown || (battleRevealStarted ? "AI 战报正在输出，请稍候..." : "")}
                       </Streamdown>
                     </div>
@@ -1376,7 +1378,7 @@ function App() {
                     )}
                   </div>
                   <div className="lineup-commentary-body">
-                    <Streamdown>
+                    <Streamdown plugins={STREAMDOWN_PLUGINS} parseIncompleteMarkdown>
                       {isLineupCommentaryLoading
                         ? "双方阵容已经落定，军师正在逐位比对核心、联动和短板，请稍候片刻。"
                         : lineupCommentary}
