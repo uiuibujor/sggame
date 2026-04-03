@@ -4,7 +4,9 @@ import "streamdown/styles.css";
 import LineupPanel from "./components/LineupPanel";
 import Modal from "./components/Modal";
 import RulesContent from "./components/RulesContent";
+import { POSITIONS } from "./data/gameData";
 import { streamBattleInference } from "./lib/aiBattleClient";
+import { chooseDraftDecision } from "./lib/aiDraftClient";
 import {
   buildDraftCandidates,
   canSubmit,
@@ -35,6 +37,8 @@ const TYPEWRITER_CHARS_PER_TICK = 1;
 const TYPEWRITER_TICK_MS = 25;
 const AI_ROLL_MIN_MS = 1200;
 const AI_ROLL_MAX_MS = 3000;
+const AI_DRAFT_LOG_STORAGE_KEY = "sggame-ai-draft-log";
+const POSITION_NAME_BY_ID = Object.fromEntries(POSITIONS.map((position) => [position.id, position.name]));
 
 function getRandomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -77,6 +81,121 @@ function pickAiPosition(game, player, hero) {
   }
 
   return validPositions[Math.floor(Math.random() * validPositions.length)] ?? null;
+}
+
+function getPositionName(positionId) {
+  return POSITION_NAME_BY_ID[positionId] || positionId;
+}
+
+function isPositionValidForHero(game, player, hero, positionId) {
+  if (!hero || !positionId || !POSITION_NAME_BY_ID[positionId]) {
+    return false;
+  }
+
+  const lineup = player === "A" ? game.lineupA : game.lineupB;
+  if (lineup[positionId]) {
+    return false;
+  }
+
+  if (positionId === "lord" && hero.color !== "blue") {
+    return false;
+  }
+
+  return true;
+}
+
+function normalizeAiDraftDecision(game, decision) {
+  const config = getTurnConfig(game);
+  const minPicksThisTurn = config?.min ?? 1;
+  const canEndTurn = game.picksThisTurn >= minPicksThisTurn;
+  const feedback = typeof decision?.feedback === "string" ? decision.feedback.trim() : "";
+
+  if (decision?.action === "end_turn") {
+    if (!canEndTurn) {
+      throw new Error("AI attempted to end the turn before reaching the minimum pick count");
+    }
+
+    return {
+      action: "end_turn",
+      heroId: null,
+      positionId: null,
+      feedback: feedback || "这一轮阵容已经够用，先收手保留后续选择空间。",
+      source: "deepseek",
+    };
+  }
+
+  const heroId = typeof decision?.heroId === "string" ? decision.heroId : null;
+  const positionId = typeof decision?.positionId === "string" ? decision.positionId : null;
+  const hero = heroId ? game.displayHeroes.find((candidate) => candidate.id === heroId) : null;
+
+  if (!hero) {
+    throw new Error("AI selected a hero that is not in the paused candidate list");
+  }
+
+  if (!isPositionValidForHero(game, game.currentPlayer, hero, positionId)) {
+    throw new Error("AI selected an invalid position for the chosen hero");
+  }
+
+  return {
+    action: "pick",
+    heroId,
+    positionId,
+    feedback: feedback || `先拿 ${hero.name}，补到${getPositionName(positionId)}位。`,
+    source: "deepseek",
+  };
+}
+
+function buildFallbackAiDecision(game, reason) {
+  const config = getTurnConfig(game);
+  const minPicksThisTurn = config?.min ?? 1;
+
+  if (game.picksThisTurn >= minPicksThisTurn && game.displayHeroes.length === 0) {
+    return {
+      action: "end_turn",
+      heroId: null,
+      positionId: null,
+      feedback: `DeepSeek 暂时没有给出可用决策，${reason}。这一手先结束回合。`,
+      source: "fallback",
+    };
+  }
+
+  const hero = pickAiCandidate(game, game.currentPlayer);
+  if (!hero) {
+    if (game.picksThisTurn >= minPicksThisTurn) {
+      return {
+        action: "end_turn",
+        heroId: null,
+        positionId: null,
+        feedback: `DeepSeek 暂时没有给出可用决策，${reason}。当前候选不足，先结束回合。`,
+        source: "fallback",
+      };
+    }
+
+    throw new Error("No fallback AI hero candidates are available");
+  }
+
+  const positionId = pickAiPosition(game, game.currentPlayer, hero);
+  if (!positionId) {
+    if (game.picksThisTurn >= minPicksThisTurn) {
+      return {
+        action: "end_turn",
+        heroId: null,
+        positionId: null,
+        feedback: `DeepSeek 暂时没有给出可用决策，${reason}。当前没有合适空位，先结束回合。`,
+        source: "fallback",
+      };
+    }
+
+    throw new Error("No fallback AI positions are available");
+  }
+
+  return {
+    action: "pick",
+    heroId: hero.id,
+    positionId,
+    feedback: `DeepSeek 暂时没有给出可用决策，${reason}。先用兜底策略拿下 ${hero.name}，补到${getPositionName(positionId)}位。`,
+    source: "fallback",
+  };
 }
 
 function detectBattleWinner(markdown) {
@@ -185,6 +304,21 @@ function App() {
   const [battleWinner, setBattleWinner] = useState(null);
   const [battleRevealStarted, setBattleRevealStarted] = useState(false);
   const [isAiStreaming, setIsAiStreaming] = useState(false);
+  const [isAiDraftThinking, setIsAiDraftThinking] = useState(false);
+  const [aiDraftFeedback, setAiDraftFeedback] = useState(null);
+  const [aiDraftHistory, setAiDraftHistory] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(AI_DRAFT_LOG_STORAGE_KEY);
+      if (!raw) {
+        return [];
+      }
+
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
   const [battleBufferCountdown, setBattleBufferCountdown] = useState(BATTLE_BUFFER_MS / 1000);
   const [battleLoadingLineIndex, setBattleLoadingLineIndex] = useState(0);
   const [theme, setTheme] = useState(() => window.localStorage.getItem("sg-theme") || "dark");
@@ -196,8 +330,10 @@ function App() {
   const battleLoadingLineTimerRef = useRef(null);
   const aiActionTimerRef = useRef(null);
   const aiRollStopTimerRef = useRef(null);
+  const aiDraftThinkingRef = useRef(false);
+  const aiPendingPositionRef = useRef(null);
+  const aiDraftDecisionRunRef = useRef(0);
   const battleMarkdownShellRef = useRef(null);
-  const battleMarkdownContentRef = useRef(null);
   const battleMarkdownTargetRef = useRef("");
   const isAiStreamingRef = useRef(false);
   const battleRevealStartedRef = useRef(false);
@@ -222,8 +358,16 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
+    window.localStorage.setItem(AI_DRAFT_LOG_STORAGE_KEY, JSON.stringify(aiDraftHistory));
+  }, [aiDraftHistory]);
+
+  useEffect(() => {
     isAiStreamingRef.current = isAiStreaming;
   }, [isAiStreaming]);
+
+  useEffect(() => {
+    aiDraftThinkingRef.current = isAiDraftThinking;
+  }, [isAiDraftThinking]);
 
   useEffect(() => {
     battleRevealStartedRef.current = battleRevealStarted;
@@ -238,61 +382,18 @@ function App() {
   }, [displayedBattleMarkdown, isAiStreaming]);
 
   useEffect(() => {
-    const root = battleMarkdownContentRef.current;
-    if (!root) {
-      return;
-    }
-
-    root.querySelectorAll(".typing-caret-node").forEach((node) => node.remove());
-
-    if (!isAiStreaming && displayedBattleMarkdown.length >= battleMarkdown.length) {
-      return;
-    }
-
-    const caret = document.createElement("span");
-    caret.className = "typing-caret-node";
-
-    let target = root.lastElementChild;
-    while (target?.lastElementChild) {
-      target = target.lastElementChild;
-    }
-
-    if (target) {
-      target.appendChild(caret);
-      return;
-    }
-
-    root.appendChild(caret);
-  }, [displayedBattleMarkdown, battleMarkdown, isAiStreaming]);
-
-  useEffect(() => {
     clearTimeout(aiActionTimerRef.current);
     aiActionTimerRef.current = null;
 
     if (game.phase !== "draft" || !game.aiPlayers?.[game.currentPlayer]) {
+      aiPendingPositionRef.current = null;
+      aiDraftThinkingRef.current = false;
+      setIsAiDraftThinking(false);
       return;
     }
 
-    const config = getTurnConfig(game);
-    if (!config) {
-      return;
-    }
-
-    aiActionTimerRef.current = window.setTimeout(() => {
-      if (game.aiTurnTarget == null) {
-        setGame((current) => ({
-          ...current,
-          aiTurnTarget: getRandomInt(config.min, config.max),
-        }));
-        return;
-      }
-
+    aiActionTimerRef.current = window.setTimeout(async () => {
       if (game.isRolling) {
-        return;
-      }
-
-      if (game.picksThisTurn >= game.aiTurnTarget && !game.heldHero) {
-        setGame((current) => getStateAfterAdvanceTurn(current));
         return;
       }
 
@@ -302,11 +403,14 @@ function App() {
           return;
         }
 
-        const targetPosition = pickAiPosition(game, game.currentPlayer, hero);
+        const targetPosition = isPositionValidForHero(game, game.currentPlayer, hero, aiPendingPositionRef.current)
+          ? aiPendingPositionRef.current
+          : pickAiPosition(game, game.currentPlayer, hero);
         if (!targetPosition) {
           return;
         }
 
+        aiPendingPositionRef.current = targetPosition;
         placeHero(targetPosition, game.currentPlayer);
         return;
       }
@@ -341,21 +445,87 @@ function App() {
         return;
       }
 
-      const selectedHero = pickAiCandidate(game, game.currentPlayer);
-      if (!selectedHero) {
-        setGame((current) => ({
-          ...current,
-          displayHeroes: buildDraftCandidates(current),
-        }));
+      if (aiDraftThinkingRef.current) {
         return;
       }
 
-      setGame((current) => ({
-        ...current,
-        selectedDisplayIdx: current.displayHeroes.findIndex((hero) => hero.id === selectedHero.id),
-        heldHero: selectedHero.id,
-      }));
-    }, game.heldHero ? 900 : game.displayHeroes.length > 0 ? 1100 : 800);
+      const snapshot = game;
+      const runId = aiDraftDecisionRunRef.current + 1;
+      aiDraftDecisionRunRef.current = runId;
+      aiDraftThinkingRef.current = true;
+      setIsAiDraftThinking(true);
+
+      try {
+        const decision = normalizeAiDraftDecision(snapshot, await chooseDraftDecision(snapshot));
+        if (aiDraftDecisionRunRef.current !== runId) {
+          return;
+        }
+
+        const feedbackEntry = {
+          ...decision,
+          player: snapshot.currentPlayer,
+          playerName: getPlayerName(snapshot, snapshot.currentPlayer),
+          turnNumber: snapshot.turnNumber,
+          heroName: decision.heroId ? getHeroById(decision.heroId)?.name || decision.heroId : null,
+          positionName: decision.positionId ? getPositionName(decision.positionId) : null,
+        };
+        setAiDraftFeedback(feedbackEntry);
+        appendAiDraftHistory(feedbackEntry);
+
+        if (decision.action === "end_turn") {
+          aiPendingPositionRef.current = null;
+          window.setTimeout(() => {
+            setGame((current) => getStateAfterAdvanceTurn(current));
+          }, 700);
+          return;
+        }
+
+        aiPendingPositionRef.current = decision.positionId;
+        setGame((current) => ({
+          ...current,
+          selectedDisplayIdx: current.displayHeroes.findIndex((hero) => hero.id === decision.heroId),
+          heldHero: decision.heroId,
+        }));
+      } catch (error) {
+        if (aiDraftDecisionRunRef.current !== runId) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : "DeepSeek draft choice failed";
+        const fallbackDecision = buildFallbackAiDecision(snapshot, message);
+
+        const feedbackEntry = {
+          ...fallbackDecision,
+          player: snapshot.currentPlayer,
+          playerName: getPlayerName(snapshot, snapshot.currentPlayer),
+          turnNumber: snapshot.turnNumber,
+          heroName: fallbackDecision.heroId ? getHeroById(fallbackDecision.heroId)?.name || fallbackDecision.heroId : null,
+          positionName: fallbackDecision.positionId ? getPositionName(fallbackDecision.positionId) : null,
+        };
+        setAiDraftFeedback(feedbackEntry);
+        appendAiDraftHistory(feedbackEntry);
+
+        if (fallbackDecision.action === "end_turn") {
+          aiPendingPositionRef.current = null;
+          window.setTimeout(() => {
+            setGame((current) => getStateAfterAdvanceTurn(current));
+          }, 700);
+          return;
+        }
+
+        aiPendingPositionRef.current = fallbackDecision.positionId;
+        setGame((current) => ({
+          ...current,
+          selectedDisplayIdx: current.displayHeroes.findIndex((hero) => hero.id === fallbackDecision.heroId),
+          heldHero: fallbackDecision.heroId,
+        }));
+      } finally {
+        if (aiDraftDecisionRunRef.current === runId) {
+          aiDraftThinkingRef.current = false;
+          setIsAiDraftThinking(false);
+        }
+      }
+    }, game.heldHero ? 900 : game.displayHeroes.length > 0 ? 950 : 800);
 
     return () => {
       clearTimeout(aiActionTimerRef.current);
@@ -369,6 +539,26 @@ function App() {
     window.setTimeout(() => {
       setToasts((current) => current.filter((toast) => toast.id !== id));
     }, 3000);
+  }
+
+  function appendAiDraftHistory(entry) {
+    setAiDraftHistory((current) => {
+      const next = [
+        ...current,
+        {
+          id: `${Date.now()}-${Math.random()}`,
+          timestamp: new Date().toISOString(),
+          ...entry,
+        },
+      ];
+
+      return next.slice(-40);
+    });
+  }
+
+  function clearAiDraftHistory() {
+    setAiDraftHistory([]);
+    window.localStorage.removeItem(AI_DRAFT_LOG_STORAGE_KEY);
   }
 
   function stopRollingTimer() {
@@ -426,6 +616,10 @@ function App() {
     aiActionTimerRef.current = null;
     clearTimeout(aiRollStopTimerRef.current);
     aiRollStopTimerRef.current = null;
+    aiDraftDecisionRunRef.current += 1;
+    aiDraftThinkingRef.current = false;
+    aiPendingPositionRef.current = null;
+    setIsAiDraftThinking(false);
   }
 
   function openModal(modalName) {
@@ -456,6 +650,8 @@ function App() {
     battleMarkdownTargetRef.current = "";
     setBattleWinner(null);
     setIsAiStreaming(false);
+    setAiDraftFeedback(null);
+    clearAiDraftHistory();
     setGame((current) => ({
       ...createInitialGameState(),
       playerNames: { ...current.playerNames },
@@ -478,6 +674,8 @@ function App() {
     battleMarkdownTargetRef.current = "";
     setBattleWinner(null);
     setIsAiStreaming(false);
+    setAiDraftFeedback(null);
+    clearAiDraftHistory();
     setGame((current) => ({
       ...createInitialGameState(),
       mode: current.mode,
@@ -742,6 +940,15 @@ function App() {
   const showVictoryAnimation = Boolean(!isAiStreaming && !isBattleTyping && battleWinner);
   const battleLoadingSegments = buildBattleLoadingSegments(game);
   const showBattleBuffering = game.phase === "arrange" && isAiStreaming && !battleRevealStarted;
+  const showAiDraftFeedback =
+    isAiTurn && aiDraftFeedback?.player === game.currentPlayer && aiDraftFeedback?.turnNumber === game.turnNumber;
+  const showAiDraftHistoryPanel = game.mode === "ai" && aiDraftHistory.length > 0;
+  const draftRemainingPicks = Math.max(0, game.maxPicksThisTurn - game.picksThisTurn);
+  const showDraftBanner = game.phase === "draft";
+  const draftBannerLabel = game.currentPlayer === "A" ? "蓝方点将" : "红方点将";
+  const draftBannerText = isAiTurn
+    ? `${getPlayerLabel(game, game.currentPlayer)}正在选择武将，本回合还可点 ${draftRemainingPicks} 人`
+    : `当前由${getPlayerLabel(game, game.currentPlayer)}选择武将，本回合还可点 ${draftRemainingPicks} 人`;
 
   return (
     <div className="app-shell">
@@ -863,6 +1070,16 @@ function App() {
             </div>
           </header>
 
+          {showDraftBanner && (
+            <div className={`draft-turn-banner player-${game.currentPlayer.toLowerCase()}`}>
+              <div className="draft-turn-banner-label">
+                <i className={`fa-solid ${game.currentPlayer === "A" ? "fa-shield-halved" : "fa-fire-flame-curved"}`} />
+                {draftBannerLabel}
+              </div>
+              <div className="draft-turn-banner-text">{draftBannerText}</div>
+            </div>
+          )}
+
           <main className="game-board">
             <LineupPanel game={game} player="A" onPlaceHero={placeHero} />
 
@@ -887,6 +1104,32 @@ function App() {
                     game.displayHeroes.length === 0 &&
                     "点击下方按钮直接开始点将"}
                 </div>
+
+                {game.phase === "draft" && isAiTurn && (isAiDraftThinking || showAiDraftFeedback) && (
+                  <div className={`ai-draft-feedback player-${game.currentPlayer.toLowerCase()}`}>
+                    <div className="ai-draft-feedback-head">
+                      <span className="ai-draft-feedback-title">
+                        <i className="fa-solid fa-brain" />
+                        DeepSeek V3.2 军师判断
+                      </span>
+                      {showAiDraftFeedback && aiDraftFeedback.source === "fallback" && (
+                        <span className="ai-draft-feedback-badge">兜底</span>
+                      )}
+                    </div>
+                    <div className="ai-draft-feedback-body">
+                      {isAiDraftThinking && "正在读取停下的候选武将，并结合当前阵容做选择..."}
+                      {!isAiDraftThinking && showAiDraftFeedback && aiDraftFeedback.action === "end_turn" && aiDraftFeedback.feedback}
+                      {!isAiDraftThinking && showAiDraftFeedback && aiDraftFeedback.action === "pick" && (
+                        <>
+                          <div className="ai-draft-feedback-choice">
+                            选择：{aiDraftFeedback.heroName} 至 {aiDraftFeedback.positionName}
+                          </div>
+                          <div>{aiDraftFeedback.feedback}</div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {showMarkdownBattle ? (
                   <div className="battle-markdown-shell" ref={battleMarkdownShellRef}>
@@ -917,7 +1160,7 @@ function App() {
                         </div>
                       </div>
                     )}
-                    <div className={`battle-markdown ${isAiStreaming || isBattleTyping ? "typing" : ""}`} ref={battleMarkdownContentRef}>
+                    <div className="battle-markdown">
                       <Streamdown>
                         {displayedBattleMarkdown || (battleRevealStarted ? "AI 战报正在输出，请稍候..." : "")}
                       </Streamdown>
@@ -992,6 +1235,30 @@ function App() {
                   </>
                 )}
               </div>
+
+              {showAiDraftHistoryPanel && (
+                <section className="ai-draft-history-panel">
+                  <div className="ai-draft-history-head">
+                    <span className="ai-draft-history-title">
+                      <i className="fa-solid fa-book-open" />
+                      AI 军师札记
+                    </span>
+                    <span className="ai-draft-history-count">{aiDraftHistory.length} 条</span>
+                  </div>
+                  <div className="ai-draft-history-list">
+                    {[...aiDraftHistory].reverse().map((entry) => (
+                      <article key={entry.id} className={`ai-draft-history-item player-${entry.player?.toLowerCase?.() || "b"}`}>
+                        <div className="ai-draft-history-meta">
+                          <span>{entry.playerName || entry.player}</span>
+                          <span>第 {Number(entry.turnNumber ?? 0) + 1} 步</span>
+                          <span>{entry.action === "end_turn" ? "结束回合" : `${entry.heroName} -> ${entry.positionName}`}</span>
+                        </div>
+                        <div className="ai-draft-history-copy">{entry.feedback}</div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
             </section>
 
             <LineupPanel game={game} player="B" onPlaceHero={placeHero} />

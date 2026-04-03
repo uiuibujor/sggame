@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { buildDraftPrompt } from "../shared/draftPrompt.js";
 
 export function loadEnvFromFile() {
   if (!existsSync(".env")) {
@@ -89,17 +90,65 @@ function readJsonBody(req) {
   });
 }
 
+function extractJsonObject(text) {
+  if (!text || typeof text !== "string") {
+    throw new Error("AI response was empty");
+  }
+
+  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const source = fencedMatch?.[1] || text;
+  const start = source.indexOf("{");
+  const end = source.lastIndexOf("}");
+
+  if (start < 0 || end < start) {
+    throw new Error("AI response did not contain a JSON object");
+  }
+
+  return JSON.parse(source.slice(start, end + 1));
+}
+
+function normalizeDraftDecision(rawDecision, rawText) {
+  const action = rawDecision?.action === "end_turn" ? "end_turn" : "pick";
+  const heroId = typeof rawDecision?.heroId === "string" ? rawDecision.heroId : typeof rawDecision?.hero_id === "string" ? rawDecision.hero_id : null;
+  const positionId =
+    typeof rawDecision?.positionId === "string"
+      ? rawDecision.positionId
+      : typeof rawDecision?.position_id === "string"
+        ? rawDecision.position_id
+        : null;
+  const feedback =
+    typeof rawDecision?.feedback === "string"
+      ? rawDecision.feedback.trim()
+      : typeof rawDecision?.reason === "string"
+        ? rawDecision.reason.trim()
+        : typeof rawDecision?.comment === "string"
+          ? rawDecision.comment.trim()
+          : "";
+
+  return {
+    action,
+    heroId: action === "pick" ? heroId : null,
+    positionId: action === "pick" ? positionId : null,
+    feedback: feedback || rawText.trim(),
+  };
+}
+
 const EXACT_SYSTEM_PROMPT = `你是一个 “架空三国战争推演系统” ，核心使命是导演一场逻辑自洽、过程跌宕、充满人性变数、极具直播解说感的史诗对决。
 
 核心理念：战争过程 > 阵容强弱；人物决策与人性 > 静态对比；戏剧性与意外性 > 机械胜负。
 
 【一、世界观规则】
+战争目标：夺取当前战场的绝对控制权（如占领城池、击杀主帅、彻底击溃敌军等），而非单纯消灭对方。
+
 完全架空，所有人物视为敌对阵营（不参考历史阵营关系）。
 
 同阵容中存在历史亲密关系（如刘关张）→ 可增强配合，但不允许叛变。但：若同阵容中存在历史敌对或猜忌关系（如曹操与刘备、司马懿与曹爽等），可触发分裂或消极行为。
 
 人物性格与战术风格标签（核心驱动力）：每个角色隐含其大众认知的性格标签（如：关羽的“傲”、张飞的“莽”、诸葛的“慎”、曹操的“疑”、吕布的“反复”、魏延的“怨”等），其行为、失误、甚至叛变都需与此标签挂钩。
 
+获胜条件：一方完全控制战场（如占领城池、击杀主帅、彻底击溃敌军等），或对方主帅叛变/逃跑/被生擒。
+
+禁止平局：必须有明确胜负，不能以“双方都很强”或“战况胶着”为由判定平局。
 【二、核心原则】
 ❗严禁：直接根据阵容强弱判断胜负、开局碾压、“因为更强所以赢”。
 胜负必须源于：战术选择、人物行为（含符合/违背性格的决策）、战场变化、关键转折事件、人物命运分支（叛变/逃跑/倒戈等）。
@@ -421,6 +470,72 @@ async function handleBattleStream(req, res) {
   }
 }
 
+async function handleDraftChoice(req, res) {
+  const { model, apiKey, upstreamUrl } = getProxyConfig();
+
+  if (!apiKey) {
+    json(res, 500, {
+      error: "Missing SILICONFLOW_API_KEY. Please configure it in .env first.",
+    });
+    return;
+  }
+
+  const body = await readJsonBody(req);
+  const { draft } = body;
+  if (!draft) {
+    json(res, 400, { error: "Request body is missing draft data." });
+    return;
+  }
+
+  const prompt = buildDraftPrompt(draft);
+  const upstreamResponse = await fetch(upstreamUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      temperature: 0.7,
+      max_tokens: 900,
+      messages: [
+        { role: "system", content: prompt.system },
+        { role: "user", content: prompt.user },
+      ],
+    }),
+  });
+
+  if (!upstreamResponse.ok) {
+    const detail = await upstreamResponse.text();
+    json(res, upstreamResponse.status || 500, {
+      error: "SiliconFlow draft choice request failed.",
+      detail,
+    });
+    return;
+  }
+
+  const payload = await upstreamResponse.json();
+  const rawText = payload?.choices?.[0]?.message?.content || "";
+
+  if (!rawText) {
+    json(res, 502, {
+      error: "AI did not return a draft choice.",
+    });
+    return;
+  }
+
+  try {
+    const decision = normalizeDraftDecision(extractJsonObject(rawText), rawText);
+    json(res, 200, { decision });
+  } catch (error) {
+    json(res, 502, {
+      error: error instanceof Error ? error.message : "Failed to parse AI draft choice.",
+      rawText,
+    });
+  }
+}
+
 export async function handleProxyRequest(req, res) {
   const { model, apiKey } = getProxyConfig();
 
@@ -449,6 +564,17 @@ export async function handleProxyRequest(req, res) {
     } catch (error) {
       json(res, 500, {
         error: error instanceof Error ? error.message : "服务内部错误",
+      });
+    }
+    return true;
+  }
+
+  if (req.method === "POST" && req.url === "/api/draft/choice") {
+    try {
+      await handleDraftChoice(req, res);
+    } catch (error) {
+      json(res, 500, {
+        error: error instanceof Error ? error.message : "Internal server error",
       });
     }
     return true;

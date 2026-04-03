@@ -7,6 +7,10 @@
   path = "/api/battle/stream"
   function = "battle-stream"
 
+[[edge_functions]]
+  path = "/api/draft/choice"
+  function = "draft-choice"
+
 [[redirects]]
   from = "/api/health"
   to = "/.netlify/functions/health"
