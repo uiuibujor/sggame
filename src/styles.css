@@ -1567,8 +1567,34 @@ button {
   color: var(--gold-bright);
 }
 
+.battle-markdown [data-streamdown="strong"],
+.lineup-commentary-body [data-streamdown="strong"],
+.battle-markdown strong,
+.lineup-commentary-body strong {
+  color: #fff;
+  font-weight: 700;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+:root[data-theme="light"] .battle-markdown [data-streamdown="strong"],
+:root[data-theme="light"] .lineup-commentary-body [data-streamdown="strong"],
+:root[data-theme="light"] .battle-markdown strong,
+:root[data-theme="light"] .lineup-commentary-body strong {
+  color: #000;
+}
+
 .battle-markdown em {
   color: var(--text);
+}
+
+.battle-markdown [data-streamdown="emphasis"],
+.lineup-commentary-body [data-streamdown="emphasis"],
+.battle-markdown em,
+.lineup-commentary-body em {
+  color: var(--text);
+  font-style: italic;
 }
 
 .battle-markdown blockquote {

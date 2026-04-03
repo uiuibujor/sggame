@@ -35,6 +35,7 @@ const PARTICLES = Array.from({ length: 18 }, (_, index) => ({
 }));
 
 const BATTLE_BUFFER_MS = 20000;
+const LINEUP_COMMENTARY_BUFFER_MS = 5000;
 const TYPEWRITER_CHARS_PER_TICK = 1;
 const TYPEWRITER_TICK_MS = 25;
 const AI_ROLL_MIN_MS = 1200;
@@ -326,9 +327,11 @@ function App() {
   const [isAiDraftThinking, setIsAiDraftThinking] = useState(false);
   const [aiDraftFeedback, setAiDraftFeedback] = useState(null);
   const [lineupCommentary, setLineupCommentary] = useState("");
+  const [displayedLineupCommentary, setDisplayedLineupCommentary] = useState("");
   const [lineupCommentarySource, setLineupCommentarySource] = useState("ai");
   const [isLineupCommentaryLoading, setIsLineupCommentaryLoading] = useState(false);
   const [isLineupCommentaryComplete, setIsLineupCommentaryComplete] = useState(false);
+  const [lineupCommentaryRevealStarted, setLineupCommentaryRevealStarted] = useState(false);
   const [draftTurnFlash, setDraftTurnFlash] = useState(null);
   const [aiDraftHistory, setAiDraftHistory] = useState(() => {
     try {
@@ -350,6 +353,8 @@ function App() {
   const battleTimerRef = useRef(null);
   const battleTypingTimerRef = useRef(null);
   const battleRevealTimerRef = useRef(null);
+  const lineupCommentaryTypingTimerRef = useRef(null);
+  const lineupCommentaryRevealTimerRef = useRef(null);
   const battleBufferCountdownTimerRef = useRef(null);
   const battleLoadingLineTimerRef = useRef(null);
   const aiActionTimerRef = useRef(null);
@@ -362,8 +367,11 @@ function App() {
   const lastLineupCommentaryKeyRef = useRef("");
   const battleMarkdownShellRef = useRef(null);
   const battleMarkdownTargetRef = useRef("");
+  const lineupCommentaryTargetRef = useRef("");
   const isAiStreamingRef = useRef(false);
   const battleRevealStartedRef = useRef(false);
+  const isLineupCommentaryLoadingRef = useRef(false);
+  const lineupCommentaryRevealStartedRef = useRef(false);
 
   useEffect(
     () => () => {
@@ -371,6 +379,8 @@ function App() {
       clearTimeout(battleTimerRef.current);
       clearInterval(battleTypingTimerRef.current);
       clearTimeout(battleRevealTimerRef.current);
+      clearInterval(lineupCommentaryTypingTimerRef.current);
+      clearTimeout(lineupCommentaryRevealTimerRef.current);
       clearInterval(battleBufferCountdownTimerRef.current);
       clearInterval(battleLoadingLineTimerRef.current);
       clearTimeout(aiActionTimerRef.current);
@@ -398,16 +408,30 @@ function App() {
   }, [isAiDraftThinking]);
 
   useEffect(() => {
+    isLineupCommentaryLoadingRef.current = isLineupCommentaryLoading;
+  }, [isLineupCommentaryLoading]);
+
+  useEffect(() => {
     battleRevealStartedRef.current = battleRevealStarted;
   }, [battleRevealStarted]);
 
   useEffect(() => {
+    lineupCommentaryRevealStartedRef.current = lineupCommentaryRevealStarted;
+  }, [lineupCommentaryRevealStarted]);
+
+  useEffect(() => {
     if (game.phase !== "arrange") {
+      resetLineupCommentaryTypingTimer();
+      resetLineupCommentaryRevealTimer();
       lastLineupCommentaryKeyRef.current = "";
       setLineupCommentary("");
+      setDisplayedLineupCommentary("");
       setLineupCommentarySource("ai");
       setIsLineupCommentaryLoading(false);
       setIsLineupCommentaryComplete(false);
+      setLineupCommentaryRevealStarted(false);
+      lineupCommentaryTargetRef.current = "";
+      lineupCommentaryRevealStartedRef.current = false;
       return undefined;
     }
 
@@ -425,10 +449,25 @@ function App() {
 
     const controller = new AbortController();
     let cancelled = false;
+    resetLineupCommentaryTypingTimer();
+    resetLineupCommentaryRevealTimer();
     setLineupCommentary("");
+    setDisplayedLineupCommentary("");
     setLineupCommentarySource("ai");
     setIsLineupCommentaryLoading(true);
     setIsLineupCommentaryComplete(false);
+    setLineupCommentaryRevealStarted(false);
+    lineupCommentaryTargetRef.current = "";
+    lineupCommentaryRevealStartedRef.current = false;
+    lineupCommentaryRevealTimerRef.current = window.setTimeout(() => {
+      if (cancelled) {
+        return;
+      }
+
+      lineupCommentaryRevealStartedRef.current = true;
+      setLineupCommentaryRevealStarted(true);
+      ensureLineupCommentaryTypingTimer();
+    }, LINEUP_COMMENTARY_BUFFER_MS);
 
     streamLineupCommentary(
       game,
@@ -438,18 +477,21 @@ function App() {
             return;
           }
 
-          setIsLineupCommentaryLoading(false);
+          lineupCommentaryTargetRef.current = fullText;
           setLineupCommentary(fullText);
+          ensureLineupCommentaryTypingTimer();
         },
         onComplete(text) {
           if (cancelled) {
             return;
           }
 
+          lineupCommentaryTargetRef.current = text;
           setIsLineupCommentaryLoading(false);
           setLineupCommentary(text);
           setLineupCommentarySource("ai");
           setIsLineupCommentaryComplete(true);
+          ensureLineupCommentaryTypingTimer();
         },
       },
       { signal: controller.signal },
@@ -459,9 +501,11 @@ function App() {
           return;
         }
 
+        lineupCommentaryTargetRef.current = text;
         setLineupCommentary(text);
         setLineupCommentarySource("ai");
         setIsLineupCommentaryComplete(true);
+        ensureLineupCommentaryTypingTimer();
       })
       .catch((error) => {
         if (cancelled) {
@@ -472,9 +516,17 @@ function App() {
           return;
         }
 
-        setLineupCommentary(buildFallbackLineupCommentary(game));
+        const fallbackCommentary = buildFallbackLineupCommentary(game);
+        resetLineupCommentaryTypingTimer();
+        resetLineupCommentaryRevealTimer();
+        setLineupCommentary(fallbackCommentary);
+        setDisplayedLineupCommentary(fallbackCommentary);
         setLineupCommentarySource("fallback");
+        setIsLineupCommentaryLoading(false);
         setIsLineupCommentaryComplete(true);
+        setLineupCommentaryRevealStarted(true);
+        lineupCommentaryTargetRef.current = fallbackCommentary;
+        lineupCommentaryRevealStartedRef.current = true;
         pushToast(error instanceof Error ? error.message : "AI 阵容点评失败");
       })
       .finally(() => {
@@ -486,6 +538,8 @@ function App() {
     return () => {
       cancelled = true;
       controller.abort();
+      resetLineupCommentaryTypingTimer();
+      resetLineupCommentaryRevealTimer();
     };
   }, [game.phase, game.lineupA, game.lineupB, game.playerNames]);
 
@@ -728,6 +782,16 @@ function App() {
     battleRevealTimerRef.current = null;
   }
 
+  function resetLineupCommentaryTypingTimer() {
+    clearInterval(lineupCommentaryTypingTimerRef.current);
+    lineupCommentaryTypingTimerRef.current = null;
+  }
+
+  function resetLineupCommentaryRevealTimer() {
+    clearTimeout(lineupCommentaryRevealTimerRef.current);
+    lineupCommentaryRevealTimerRef.current = null;
+  }
+
   function resetBattleBufferUiTimers() {
     clearInterval(battleBufferCountdownTimerRef.current);
     clearInterval(battleLoadingLineTimerRef.current);
@@ -748,6 +812,29 @@ function App() {
           if (!isAiStreamingRef.current) {
             clearInterval(battleTypingTimerRef.current);
             battleTypingTimerRef.current = null;
+          }
+          return current;
+        }
+
+        const nextLength = Math.min(current.length + TYPEWRITER_CHARS_PER_TICK, target.length);
+        return target.slice(0, nextLength);
+      });
+    }, TYPEWRITER_TICK_MS);
+  }
+
+  function ensureLineupCommentaryTypingTimer() {
+    if (!lineupCommentaryRevealStartedRef.current || lineupCommentaryTypingTimerRef.current) {
+      return;
+    }
+
+    lineupCommentaryTypingTimerRef.current = window.setInterval(() => {
+      setDisplayedLineupCommentary((current) => {
+        const target = lineupCommentaryTargetRef.current;
+
+        if (current.length >= target.length) {
+          if (!isLineupCommentaryLoadingRef.current) {
+            clearInterval(lineupCommentaryTypingTimerRef.current);
+            lineupCommentaryTypingTimerRef.current = null;
           }
           return current;
         }
@@ -786,6 +873,8 @@ function App() {
     resetBattleTimer();
     resetBattleTypingTimer();
     resetBattleRevealTimer();
+    resetLineupCommentaryTypingTimer();
+    resetLineupCommentaryRevealTimer();
     resetAiActionTimer();
     setActiveModal(null);
     setBattleMarkdown("");
@@ -799,9 +888,13 @@ function App() {
     setIsAiStreaming(false);
     setAiDraftFeedback(null);
     setLineupCommentary("");
+    setDisplayedLineupCommentary("");
     setLineupCommentarySource("ai");
     setIsLineupCommentaryLoading(false);
     setIsLineupCommentaryComplete(false);
+    setLineupCommentaryRevealStarted(false);
+    lineupCommentaryTargetRef.current = "";
+    lineupCommentaryRevealStartedRef.current = false;
     clearAiDraftHistory();
     setGame((current) => ({
       ...createInitialGameState(),
@@ -814,6 +907,8 @@ function App() {
     resetBattleTimer();
     resetBattleTypingTimer();
     resetBattleRevealTimer();
+    resetLineupCommentaryTypingTimer();
+    resetLineupCommentaryRevealTimer();
     resetAiActionTimer();
     setActiveModal(null);
     setBattleMarkdown("");
@@ -827,9 +922,13 @@ function App() {
     setIsAiStreaming(false);
     setAiDraftFeedback(null);
     setLineupCommentary("");
+    setDisplayedLineupCommentary("");
     setLineupCommentarySource("ai");
     setIsLineupCommentaryLoading(false);
     setIsLineupCommentaryComplete(false);
+    setLineupCommentaryRevealStarted(false);
+    lineupCommentaryTargetRef.current = "";
+    lineupCommentaryRevealStartedRef.current = false;
     clearAiDraftHistory();
     setGame((current) => ({
       ...createInitialGameState(),
@@ -1367,7 +1466,9 @@ function App() {
                 )}
               </div>
 
-              {game.phase === "arrange" && !showMarkdownBattle && (isLineupCommentaryLoading || lineupCommentary) && (
+              {game.phase === "arrange" &&
+                !showMarkdownBattle &&
+                (isLineupCommentaryLoading || lineupCommentary || displayedLineupCommentary) && (
                 <section className="lineup-commentary-panel">
                   <div className="lineup-commentary-head">
                     <span className="lineup-commentary-title">
@@ -1377,11 +1478,12 @@ function App() {
                       <span className="lineup-commentary-badge">系统草拟</span>
                     )}
                   </div>
-                  <div className="lineup-commentary-body">
+                  <div className="lineup-commentary-body battle-markdown">
                     <Streamdown plugins={STREAMDOWN_PLUGINS} parseIncompleteMarkdown>
-                      {isLineupCommentaryLoading
-                        ? "双方阵容已经落定，军师正在逐位比对核心、联动和短板，请稍候片刻。"
-                        : lineupCommentary}
+                      {displayedLineupCommentary ||
+                        (lineupCommentaryRevealStarted
+                          ? "AI 阵容点评正在输出，请稍候片刻。"
+                          : "双方阵容已经落定，军师正在逐位比对核心、联动和短板，请稍候片刻。")}
                     </Streamdown>
                   </div>
                 </section>
