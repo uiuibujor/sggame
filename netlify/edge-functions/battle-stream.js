@@ -15,6 +15,7 @@ function json(status, payload) {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
+      "X-Battle-Proxy": "netlify-edge",
       ...CORS_HEADERS,
     },
   });
@@ -149,6 +150,7 @@ export default async function handler(request) {
     headers: {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
+      "X-Battle-Proxy": "netlify-edge",
       ...CORS_HEADERS,
     },
   });

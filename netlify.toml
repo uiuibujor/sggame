@@ -3,6 +3,10 @@
   publish = "dist"
   functions = "netlify/functions"
 
+[[edge_functions]]
+  path = "/api/battle/stream"
+  function = "battle-stream"
+
 [[redirects]]
   from = "/api/health"
   to = "/.netlify/functions/health"

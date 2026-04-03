@@ -41,6 +41,7 @@ export default async function handler(request) {
       status: 200,
       headers: {
         "Content-Type": "application/json; charset=utf-8",
+        "X-Battle-Proxy": "netlify-function",
         ...CORS_HEADERS,
       },
     },
