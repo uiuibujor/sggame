@@ -49,13 +49,27 @@ export async function streamBattleInference(game, handlers) {
 
   if (!response.ok || !response.body) {
     const detail = await response.text();
-    throw new Error(detail || "AI 战局推演请求失败");
+    throw new Error(detail || "AI battle inference request failed");
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    const payload = await response.json();
+    const text = payload?.text || "";
+
+    if (!text) {
+      throw new Error(payload?.error || "AI did not return a complete battle report");
+    }
+
+    handlers.onComplete?.(text);
+    return;
   }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
   let fullText = "";
+  let didReceiveComplete = false;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -83,14 +97,15 @@ export async function streamBattleInference(game, handlers) {
         fullText += text;
         handlers.onChunk?.(text, fullText);
       } else if (eventName === "complete") {
+        didReceiveComplete = true;
         handlers.onComplete?.(payload.text || fullText);
       } else if (eventName === "error") {
-        throw new Error(payload.error || "AI 流式输出失败");
+        throw new Error(payload.error || "AI streaming output failed");
       }
     }
   }
 
-  if (fullText) {
-    handlers.onComplete?.(fullText);
+  if (fullText && !didReceiveComplete) {
+    throw new Error("AI battle report stream ended before completion");
   }
 }

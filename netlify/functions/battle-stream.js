@@ -20,10 +20,6 @@ function json(status, payload) {
   });
 }
 
-function sseEvent(event, data) {
-  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-}
-
 export default async function handler(request) {
   if (request.method === "OPTIONS") {
     return new Response(null, {
@@ -40,7 +36,7 @@ export default async function handler(request) {
 
   if (!apiKey) {
     return json(500, {
-      error: "缺少 SILICONFLOW_API_KEY，请先在 Netlify 环境变量中配置。",
+      error: "Missing SILICONFLOW_API_KEY in Netlify environment variables.",
     });
   }
 
@@ -48,12 +44,12 @@ export default async function handler(request) {
   try {
     body = await request.json();
   } catch {
-    return json(400, { error: "请求体不是合法 JSON。" });
+    return json(400, { error: "Request body must be valid JSON." });
   }
 
   const { game } = body || {};
   if (!game) {
-    return json(400, { error: "请求体缺少 game 数据。" });
+    return json(400, { error: "Request body is missing game data." });
   }
 
   const prompt = buildPrompt(game);
@@ -65,7 +61,9 @@ export default async function handler(request) {
     },
     body: JSON.stringify({
       model,
-      stream: true,
+      // Netlify streamed synchronous functions are easier to truncate on long
+      // AI outputs, so production uses a buffered upstream response instead.
+      stream: false,
       temperature: 1.1,
       max_tokens: 12000,
       messages: [
@@ -75,75 +73,35 @@ export default async function handler(request) {
     }),
   });
 
-  if (!upstreamResponse.ok || !upstreamResponse.body) {
+  if (!upstreamResponse.ok) {
     const detail = await upstreamResponse.text();
     return json(upstreamResponse.status || 500, {
-      error: "硅基流动接口请求失败。",
+      error: "Upstream AI request failed.",
       detail,
     });
   }
 
-  const encoder = new TextEncoder();
-  const decoder = new TextDecoder("utf-8");
+  let payload;
+  try {
+    payload = await upstreamResponse.json();
+  } catch {
+    return json(502, {
+      error: "Failed to parse upstream AI response.",
+    });
+  }
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      let buffer = "";
-      let fullText = "";
+  const choice = payload?.choices?.[0];
+  const message = choice?.message;
+  const text = (message?.content || message?.reasoning_content || "").trim();
 
-      try {
-        for await (const chunk of upstreamResponse.body) {
-          buffer += decoder.decode(chunk, { stream: true });
-          const lines = buffer.split(/\r?\n/);
-          buffer = lines.pop() || "";
+  if (!text) {
+    return json(502, {
+      error: "AI response did not include a battle report.",
+    });
+  }
 
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith("data:")) {
-              continue;
-            }
-
-            const data = trimmed.slice(5).trim();
-            if (!data || data === "[DONE]") {
-              continue;
-            }
-
-            const payload = JSON.parse(data);
-            const choice = payload.choices?.[0];
-            const deltaText = choice?.delta?.content || choice?.delta?.reasoning_content || "";
-
-            if (!deltaText) {
-              continue;
-            }
-
-            fullText += deltaText;
-            controller.enqueue(encoder.encode(sseEvent("chunk", { text: deltaText })));
-          }
-        }
-
-        controller.enqueue(encoder.encode(sseEvent("complete", { text: fullText.trim() })));
-        controller.enqueue(encoder.encode(sseEvent("done", { ok: true })));
-      } catch (error) {
-        controller.enqueue(
-          encoder.encode(
-            sseEvent("error", {
-              error: error instanceof Error ? error.message : "流式解析失败",
-            }),
-          ),
-        );
-      } finally {
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(stream, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      ...CORS_HEADERS,
-    },
+  return json(200, {
+    text,
+    mode: "buffered",
   });
 }

@@ -4,11 +4,6 @@
   functions = "netlify/functions"
 
 [[redirects]]
-  from = "/api/battle/stream"
-  to = "/.netlify/functions/battle-stream"
-  status = 200
-
-[[redirects]]
   from = "/api/health"
   to = "/.netlify/functions/health"
   status = 200
