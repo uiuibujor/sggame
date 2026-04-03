@@ -8,6 +8,8 @@
     "dev:client": "vite",
     "dev:server": "node server/index.js",
     "build": "vite build",
+    "start": "node server/index.js",
+    "start:server": "node server/index.js",
     "preview": "vite preview",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
