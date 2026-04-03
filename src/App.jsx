@@ -7,6 +7,7 @@ import RulesContent from "./components/RulesContent";
 import { POSITIONS } from "./data/gameData";
 import { streamBattleInference } from "./lib/aiBattleClient";
 import { chooseDraftDecision } from "./lib/aiDraftClient";
+import { streamLineupCommentary } from "./lib/aiLineupClient";
 import {
   buildDraftCandidates,
   canSubmit,
@@ -38,6 +39,7 @@ const TYPEWRITER_TICK_MS = 25;
 const AI_ROLL_MIN_MS = 1200;
 const AI_ROLL_MAX_MS = 3000;
 const AI_DRAFT_LOG_STORAGE_KEY = "sggame-ai-draft-log";
+const DRAFT_TURN_FLASH_MS = 1000;
 const POSITION_NAME_BY_ID = Object.fromEntries(POSITIONS.map((position) => [position.id, position.name]));
 
 function getRandomInt(min, max) {
@@ -231,6 +233,21 @@ function getRoleHeroName(game, player, positionId, fallback) {
   return hero?.name || fallback;
 }
 
+function buildFallbackLineupCommentary(game) {
+  const blueLord = getRoleHeroName(game, "A", "lord", "蓝方主公");
+  const blueStrategist = getRoleHeroName(game, "A", "strategist", "蓝方军师");
+  const blueCommander = getRoleHeroName(game, "A", "commander", "蓝方元帅");
+  const redLord = getRoleHeroName(game, "B", "lord", "红方主公");
+  const redStrategist = getRoleHeroName(game, "B", "strategist", "红方军师");
+  const redCommander = getRoleHeroName(game, "B", "commander", "红方元帅");
+
+  return [
+    `蓝方这套阵容由 ${blueLord} 坐镇主公位，${blueStrategist} 和 ${blueCommander} 把中枢节奏撑了起来，整体看起来更像一套先稳住中军、再慢慢把侧翼资源调动开的配置。只要先锋和骑兵能顺利把第一波接战顶住，蓝方后续的联动空间会越打越宽。`,
+    `红方则是 ${redLord} 挂帅，${redStrategist} 与 ${redCommander} 负责把进攻节奏拧成一股绳，这边的优点是爆发点更集中，真打起来更容易先把压力砸到某一个位置上。但红方也更吃关键位发挥，一旦前几轮冲击没能打开局面，整条推进线就容易被拖慢。`,
+    `眼下最值得看的，还是双方中军调度和侧翼突击谁先占住主动。蓝方若能把阵型稳住，比赛会进入配合取胜的节奏；红方若先手撕开缺口，局势就会很快转成强压对抗。`,
+  ].join("\n\n");
+}
+
 function buildBattleLoadingLines(game) {
   const blueLord = getRoleHeroName(game, "A", "lord", "蓝军主公");
   const blueCommander = getRoleHeroName(game, "A", "commander", "蓝军主帅");
@@ -306,6 +323,11 @@ function App() {
   const [isAiStreaming, setIsAiStreaming] = useState(false);
   const [isAiDraftThinking, setIsAiDraftThinking] = useState(false);
   const [aiDraftFeedback, setAiDraftFeedback] = useState(null);
+  const [lineupCommentary, setLineupCommentary] = useState("");
+  const [lineupCommentarySource, setLineupCommentarySource] = useState("ai");
+  const [isLineupCommentaryLoading, setIsLineupCommentaryLoading] = useState(false);
+  const [isLineupCommentaryComplete, setIsLineupCommentaryComplete] = useState(false);
+  const [draftTurnFlash, setDraftTurnFlash] = useState(null);
   const [aiDraftHistory, setAiDraftHistory] = useState(() => {
     try {
       const raw = window.localStorage.getItem(AI_DRAFT_LOG_STORAGE_KEY);
@@ -330,9 +352,12 @@ function App() {
   const battleLoadingLineTimerRef = useRef(null);
   const aiActionTimerRef = useRef(null);
   const aiRollStopTimerRef = useRef(null);
+  const draftTurnFlashTimerRef = useRef(null);
   const aiDraftThinkingRef = useRef(false);
   const aiPendingPositionRef = useRef(null);
   const aiDraftDecisionRunRef = useRef(0);
+  const lastDraftTurnKeyRef = useRef("");
+  const lastLineupCommentaryKeyRef = useRef("");
   const battleMarkdownShellRef = useRef(null);
   const battleMarkdownTargetRef = useRef("");
   const isAiStreamingRef = useRef(false);
@@ -348,6 +373,7 @@ function App() {
       clearInterval(battleLoadingLineTimerRef.current);
       clearTimeout(aiActionTimerRef.current);
       clearTimeout(aiRollStopTimerRef.current);
+      clearTimeout(draftTurnFlashTimerRef.current);
     },
     [],
   );
@@ -372,6 +398,125 @@ function App() {
   useEffect(() => {
     battleRevealStartedRef.current = battleRevealStarted;
   }, [battleRevealStarted]);
+
+  useEffect(() => {
+    if (game.phase !== "arrange") {
+      lastLineupCommentaryKeyRef.current = "";
+      setLineupCommentary("");
+      setLineupCommentarySource("ai");
+      setIsLineupCommentaryLoading(false);
+      setIsLineupCommentaryComplete(false);
+      return undefined;
+    }
+
+    const commentaryKey = JSON.stringify({
+      lineupA: game.lineupA,
+      lineupB: game.lineupB,
+      playerNames: game.playerNames,
+    });
+
+    if (lastLineupCommentaryKeyRef.current === commentaryKey) {
+      return undefined;
+    }
+
+    lastLineupCommentaryKeyRef.current = commentaryKey;
+
+    const controller = new AbortController();
+    let cancelled = false;
+    setLineupCommentary("");
+    setLineupCommentarySource("ai");
+    setIsLineupCommentaryLoading(true);
+    setIsLineupCommentaryComplete(false);
+
+    streamLineupCommentary(
+      game,
+      {
+        onChunk(_chunk, fullText) {
+          if (cancelled) {
+            return;
+          }
+
+          setIsLineupCommentaryLoading(false);
+          setLineupCommentary(fullText);
+        },
+        onComplete(text) {
+          if (cancelled) {
+            return;
+          }
+
+          setIsLineupCommentaryLoading(false);
+          setLineupCommentary(text);
+          setLineupCommentarySource("ai");
+          setIsLineupCommentaryComplete(true);
+        },
+      },
+      { signal: controller.signal },
+    )
+      .then((text) => {
+        if (cancelled) {
+          return;
+        }
+
+        setLineupCommentary(text);
+        setLineupCommentarySource("ai");
+        setIsLineupCommentaryComplete(true);
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        if (typeof error === "object" && error && "name" in error && error.name === "AbortError") {
+          return;
+        }
+
+        setLineupCommentary(buildFallbackLineupCommentary(game));
+        setLineupCommentarySource("fallback");
+        setIsLineupCommentaryComplete(true);
+        pushToast(error instanceof Error ? error.message : "AI 阵容点评失败");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLineupCommentaryLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [game.phase, game.lineupA, game.lineupB, game.playerNames]);
+
+  useEffect(() => {
+    if (game.phase !== "draft") {
+      lastDraftTurnKeyRef.current = "";
+      clearTimeout(draftTurnFlashTimerRef.current);
+      draftTurnFlashTimerRef.current = null;
+      setDraftTurnFlash(null);
+      return;
+    }
+
+    const turnKey = `${game.turnNumber}-${game.currentPlayer}`;
+    if (lastDraftTurnKeyRef.current === turnKey) {
+      return;
+    }
+
+    lastDraftTurnKeyRef.current = turnKey;
+    clearTimeout(draftTurnFlashTimerRef.current);
+
+    const label = game.currentPlayer === "A" ? "蓝方点将" : "红方点将";
+    const subtitle = `当前轮到 ${getPlayerLabel(game, game.currentPlayer)} 选人`;
+    setDraftTurnFlash({
+      player: game.currentPlayer,
+      label,
+      subtitle,
+    });
+
+    draftTurnFlashTimerRef.current = window.setTimeout(() => {
+      setDraftTurnFlash(null);
+      draftTurnFlashTimerRef.current = null;
+    }, DRAFT_TURN_FLASH_MS);
+  }, [game.phase, game.turnNumber, game.currentPlayer, game.playerNames]);
 
   useEffect(() => {
     if (!battleMarkdownShellRef.current) {
@@ -651,6 +796,10 @@ function App() {
     setBattleWinner(null);
     setIsAiStreaming(false);
     setAiDraftFeedback(null);
+    setLineupCommentary("");
+    setLineupCommentarySource("ai");
+    setIsLineupCommentaryLoading(false);
+    setIsLineupCommentaryComplete(false);
     clearAiDraftHistory();
     setGame((current) => ({
       ...createInitialGameState(),
@@ -675,6 +824,10 @@ function App() {
     setBattleWinner(null);
     setIsAiStreaming(false);
     setAiDraftFeedback(null);
+    setLineupCommentary("");
+    setLineupCommentarySource("ai");
+    setIsLineupCommentaryLoading(false);
+    setIsLineupCommentaryComplete(false);
     clearAiDraftHistory();
     setGame((current) => ({
       ...createInitialGameState(),
@@ -867,6 +1020,11 @@ function App() {
       return;
     }
 
+    if (!isLineupCommentaryComplete || !lineupCommentary.trim()) {
+      pushToast("请先等待 AI 阵容点评完成。", "info");
+      return;
+    }
+
     if (isAiStreaming) {
       return;
     }
@@ -933,7 +1091,8 @@ function App() {
   }
 
   const heldHero = getHeldHero(game);
-  const canBattleSubmit = canSubmit(game);
+  const isLineupCommentaryReady = isLineupCommentaryComplete && Boolean(lineupCommentary.trim());
+  const canBattleSubmit = canSubmit(game) && isLineupCommentaryReady;
   const isAiTurn = game.phase === "draft" && Boolean(game.aiPlayers?.[game.currentPlayer]);
   const isBattleTyping = displayedBattleMarkdown.length < battleMarkdown.length;
   const showMarkdownBattle = game.phase === "arrange" && (isAiStreaming || battleMarkdown || displayedBattleMarkdown);
@@ -943,6 +1102,7 @@ function App() {
   const showAiDraftFeedback =
     isAiTurn && aiDraftFeedback?.player === game.currentPlayer && aiDraftFeedback?.turnNumber === game.turnNumber;
   const showAiDraftHistoryPanel = game.mode === "ai" && aiDraftHistory.length > 0;
+  const showDraftTurnFlash = game.phase === "draft" && draftTurnFlash;
   const draftRemainingPicks = Math.max(0, game.maxPicksThisTurn - game.picksThisTurn);
   const showDraftBanner = game.phase === "draft";
   const draftBannerLabel = game.currentPlayer === "A" ? "蓝方点将" : "红方点将";
@@ -1131,6 +1291,16 @@ function App() {
                   </div>
                 )}
 
+                {showDraftTurnFlash && (
+                  <div className={`draft-turn-flash-banner draft-turn-flash-banner-${draftTurnFlash.player.toLowerCase()}`}>
+                    <div className="draft-turn-flash-glow" />
+                    <div className="draft-turn-flash-copy">
+                      <span className="draft-turn-flash-label">{draftTurnFlash.label}</span>
+                      <span className="draft-turn-flash-subtitle">{draftTurnFlash.subtitle}</span>
+                    </div>
+                  </div>
+                )}
+
                 {showMarkdownBattle ? (
                   <div className="battle-markdown-shell" ref={battleMarkdownShellRef}>
                     {showBattleBuffering && (
@@ -1194,6 +1364,26 @@ function App() {
                   <div className="empty-state">{isAiTurn ? `${getPlayerName(game, game.currentPlayer)} 正在思考阵容...` : "等待点将..."}</div>
                 )}
               </div>
+
+              {game.phase === "arrange" && !showMarkdownBattle && (isLineupCommentaryLoading || lineupCommentary) && (
+                <section className="lineup-commentary-panel">
+                  <div className="lineup-commentary-head">
+                    <span className="lineup-commentary-title">
+                      <i className="fa-solid fa-comments" /> AI 阵容点评
+                    </span>
+                    {lineupCommentarySource === "fallback" && (
+                      <span className="lineup-commentary-badge">系统草拟</span>
+                    )}
+                  </div>
+                  <div className="lineup-commentary-body">
+                    <Streamdown>
+                      {isLineupCommentaryLoading
+                        ? "双方阵容已经落定，军师正在逐位比对核心、联动和短板，请稍候片刻。"
+                        : lineupCommentary}
+                    </Streamdown>
+                  </div>
+                </section>
+              )}
 
               <div className="action-bar">
                 {game.phase === "draft" && !isAiTurn && (

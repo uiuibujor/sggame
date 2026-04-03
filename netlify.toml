@@ -11,6 +11,10 @@
   path = "/api/draft/choice"
   function = "draft-choice"
 
+[[edge_functions]]
+  path = "/api/lineup/commentary"
+  function = "lineup-commentary"
+
 [[redirects]]
   from = "/api/health"
   to = "/.netlify/functions/health"

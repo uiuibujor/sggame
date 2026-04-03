@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { buildDraftPrompt } from "../shared/draftPrompt.js";
+import { buildLineupCommentaryPrompt } from "../shared/lineupCommentaryPrompt.js";
 
 export function loadEnvFromFile() {
   if (!existsSync(".env")) {
@@ -363,6 +364,7 @@ export function buildPrompt(gamePayload) {
   const user = [
     "请严格按照系统提示词执行，不要改写世界观、规则、阶段顺序和判断标准。",
     "胜负判断完全交给你根据过程推演决定，不要套用静态面板强弱。",
+    "排版分段要清晰，人名要加粗突出，重要事件要加粗，适当使用表情符号增强解说感，但不要过度堆砌。",
     "最终输出只需要 markdown 战报正文，不要输出 JSON，不要输出额外的结构化结果，不要自动统计或记录胜负分数。",
     "必须明确输出且只选择一种结论：`蓝方获胜` 或 `红方获胜`。请在战报结尾单独成行写出这句话，便于前端识别最终结果。",
     "请在 markdown 正文中自然写出最终胜者、核心胜因和所有关键人物结局，但不要用 JSON、表格或程序化字段。",
@@ -536,6 +538,108 @@ async function handleDraftChoice(req, res) {
   }
 }
 
+async function handleLineupCommentary(req, res) {
+  const { model, apiKey, upstreamUrl } = getProxyConfig();
+
+  if (!apiKey) {
+    json(res, 500, {
+      error: "Missing SILICONFLOW_API_KEY. Please configure it in .env first.",
+    });
+    return;
+  }
+
+  const body = await readJsonBody(req);
+  const { game } = body || {};
+  if (!game) {
+    json(res, 400, { error: "Request body is missing game data." });
+    return;
+  }
+
+  const prompt = buildLineupCommentaryPrompt(game);
+  const upstreamResponse = await fetch(upstreamUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      stream: true,
+      temperature: 0.85,
+      max_tokens: 1400,
+      messages: [
+        { role: "system", content: prompt.system },
+        { role: "user", content: prompt.user },
+      ],
+    }),
+  });
+
+  if (!upstreamResponse.ok || !upstreamResponse.body) {
+    const detail = await upstreamResponse.text();
+    json(res, upstreamResponse.status || 500, {
+      error: "SiliconFlow lineup commentary request failed.",
+      detail,
+    });
+    return;
+  }
+
+  sse(res);
+
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let fullText = "";
+
+  try {
+    for await (const chunk of upstreamResponse.body) {
+      buffer += decoder.decode(chunk, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) {
+          continue;
+        }
+
+        const data = trimmed.slice(5).trim();
+        if (!data || data === "[DONE]") {
+          continue;
+        }
+
+        const payload = JSON.parse(data);
+        const choice = payload.choices?.[0];
+        const deltaText = choice?.delta?.content || choice?.delta?.reasoning_content || "";
+
+        if (!deltaText) {
+          continue;
+        }
+
+        fullText += deltaText;
+        sendEvent(res, "chunk", { text: deltaText });
+      }
+    }
+
+    if (!fullText.trim()) {
+      sendEvent(res, "error", {
+        error: "AI did not return a lineup commentary.",
+      });
+      res.end();
+      return;
+    }
+
+    sendEvent(res, "complete", {
+      text: fullText.trim(),
+    });
+    sendEvent(res, "done", { ok: true });
+    res.end();
+  } catch (error) {
+    sendEvent(res, "error", {
+      error: error instanceof Error ? error.message : "Lineup commentary stream failed",
+    });
+    res.end();
+  }
+}
+
 export async function handleProxyRequest(req, res) {
   const { model, apiKey } = getProxyConfig();
 
@@ -572,6 +676,17 @@ export async function handleProxyRequest(req, res) {
   if (req.method === "POST" && req.url === "/api/draft/choice") {
     try {
       await handleDraftChoice(req, res);
+    } catch (error) {
+      json(res, 500, {
+        error: error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+    return true;
+  }
+
+  if (req.method === "POST" && req.url === "/api/lineup/commentary") {
+    try {
+      await handleLineupCommentary(req, res);
     } catch (error) {
       json(res, 500, {
         error: error instanceof Error ? error.message : "Internal server error",

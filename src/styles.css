@@ -810,6 +810,7 @@ button {
   min-height: 340px;
   padding: 18px;
   flex-direction: column;
+  position: relative;
 }
 
 .pick-area-title {
@@ -1226,6 +1227,138 @@ button {
   border: 2px solid var(--panel);
 }
 
+.lineup-commentary-panel {
+  margin-top: 14px;
+  padding: 18px 20px;
+  border: 1px solid rgba(200, 164, 92, 0.16);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(200, 164, 92, 0.08), transparent 46%),
+    var(--panel);
+  box-shadow: 0 18px 36px rgba(4, 6, 12, 0.18);
+}
+
+.lineup-commentary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.lineup-commentary-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.lineup-commentary-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid rgba(200, 164, 92, 0.24);
+  border-radius: 999px;
+  color: var(--yellow);
+  background: rgba(200, 164, 92, 0.08);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+}
+
+.lineup-commentary-body {
+  color: var(--text-muted);
+  line-height: 1.9;
+}
+
+.lineup-commentary-body p:first-child {
+  margin-top: 0;
+}
+
+.lineup-commentary-body p:last-child {
+  margin-bottom: 0;
+}
+
+.draft-turn-flash-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 82px;
+  margin: 0;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+  animation: draft-turn-flash-in 0.4s ease;
+  pointer-events: none;
+}
+
+.draft-turn-flash-banner-a {
+  background: linear-gradient(180deg, rgba(47, 111, 202, 0.22), rgba(47, 111, 202, 0.05));
+}
+
+.draft-turn-flash-banner-b {
+  background: linear-gradient(180deg, rgba(212, 81, 93, 0.22), rgba(212, 81, 93, 0.05));
+}
+
+.draft-turn-flash-glow {
+  position: absolute;
+  inset: auto 50% -42px;
+  width: 220px;
+  height: 110px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  filter: blur(18px);
+  animation: victory-pulse 1.8s ease-in-out infinite;
+}
+
+.draft-turn-flash-banner-a .draft-turn-flash-glow {
+  background: rgba(47, 111, 202, 0.34);
+}
+
+.draft-turn-flash-banner-b .draft-turn-flash-glow {
+  background: rgba(212, 81, 93, 0.32);
+}
+
+.draft-turn-flash-copy {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.draft-turn-flash-label {
+  font-size: 1.08rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.draft-turn-flash-banner-a .draft-turn-flash-label {
+  color: var(--blue);
+  text-shadow: 0 0 20px rgba(47, 111, 202, 0.32);
+}
+
+.draft-turn-flash-banner-b .draft-turn-flash-label {
+  color: var(--red);
+  text-shadow: 0 0 20px rgba(212, 81, 93, 0.32);
+}
+
+.draft-turn-flash-subtitle {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+}
+
 .victory-banner {
   position: sticky;
   top: 0;
@@ -1375,6 +1508,18 @@ button {
   50% {
     opacity: 1;
     transform: translateX(-50%) scale(1.06);
+  }
+}
+
+@keyframes draft-turn-flash-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

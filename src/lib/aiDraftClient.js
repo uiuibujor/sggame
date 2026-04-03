@@ -1,6 +1,8 @@
 import { POSITIONS } from "../data/gameData";
 import { getHeroById, getPlayerName, getTurnConfig } from "./gameLogic";
 
+const AI_DRAFT_DECISION_TIMEOUT_MS = 15000;
+
 function mapHero(hero) {
   if (!hero) {
     return null;
@@ -48,26 +50,43 @@ function buildDraftPayload(game) {
   };
 }
 
-export async function chooseDraftDecision(game) {
-  const response = await fetch("/api/draft/choice", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      draft: buildDraftPayload(game),
-    }),
-  });
+export async function chooseDraftDecision(game, options = {}) {
+  const timeoutMs = options.timeoutMs ?? AI_DRAFT_DECISION_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
 
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || "AI draft choice request failed");
+  try {
+    const response = await fetch("/api/draft/choice", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        draft: buildDraftPayload(game),
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(detail || "AI draft choice request failed");
+    }
+
+    const payload = await response.json();
+    if (!payload?.decision) {
+      throw new Error(payload?.error || "AI did not return a valid draft decision");
+    }
+
+    return payload.decision;
+  } catch (error) {
+    if (typeof error === "object" && error && "name" in error && error.name === "AbortError") {
+      throw new Error(`AI draft choice timed out after ${Math.ceil(timeoutMs / 1000)} seconds`);
+    }
+
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeoutId);
   }
-
-  const payload = await response.json();
-  if (!payload?.decision) {
-    throw new Error(payload?.error || "AI did not return a valid draft decision");
-  }
-
-  return payload.decision;
 }
